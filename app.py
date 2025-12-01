@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 
 # --- CONFIGURAÇÃO INICIAL ---
-st.set_page_config(page_title="Gerenciador ML - V6 (Lista DRE)", layout="wide")
+st.set_page_config(page_title="Gerenciador ML - V6.1", layout="wide")
 
 if 'lista_produtos' not in st.session_state:
     st.session_state.lista_produtos = []
@@ -215,7 +215,8 @@ if len(st.session_state.lista_produtos) > 0:
     
     if col_cl.button("🗑️ Limpar Lista"):
         st.session_state.lista_produtos = []
-        st.experimental_rerun()
+        st.rerun() # CORREÇÃO AQUI: Mudado de experimental_rerun para rerun
 
 else:
     st.info("Nenhum produto adicionado ainda.")
+
