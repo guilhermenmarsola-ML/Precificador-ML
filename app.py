@@ -223,6 +223,4 @@ if len(st.session_state.lista_produtos) > 0:
 else:
     st.info("Lista vazia. Adicione produtos acima.")
 
-else:
-    st.info("Nenhum produto adicionado ainda.")
 
