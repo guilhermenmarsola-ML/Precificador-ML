@@ -3,9 +3,9 @@ import pandas as pd
 import time
 
 # --- CONFIGURAÇÃO INICIAL ---
-st.set_page_config(page_title="Gerenciador ML - V6.2 (Blindada)", layout="wide")
+st.set_page_config(page_title="Gerenciador ML - V7 (Layout Corrigido)", layout="wide")
 
-# Função Universal de Reinício (Funciona em qualquer versão)
+# Função Universal de Reinício
 def reiniciar_app():
     try:
         st.rerun()
@@ -13,24 +13,19 @@ def reiniciar_app():
         try:
             st.experimental_rerun()
         except:
-            st.warning("Por favor, pressione F5 ou 'R' para atualizar a lista.")
+            st.warning("Atualize a página (F5) para limpar.")
 
 if 'lista_produtos' not in st.session_state:
     st.session_state.lista_produtos = []
 
-# --- CSS (ESTILO APRIMORADO) ---
+# --- CSS (APENAS PARA DETALHES INTERNOS, SEM QUEBRAR LAYOUT) ---
 st.markdown("""
 <style>
-    .metric-card { background-color: #f8f9fa; padding: 15px; border-radius: 8px; border: 1px solid #dee2e6; }
-    .promo-card { background-color: #e3f2fd; padding: 10px; border-radius: 8px; border-left: 5px solid #2196f3; }
-    
-    /* Estilo do DRE dentro da lista */
     .dre-container { 
         background-color: #ffffff; 
         padding: 15px; 
         border-radius: 5px; 
         border: 1px solid #e0e0e0;
-        margin-top: 10px;
         font-family: monospace;
         font-size: 14px;
     }
@@ -43,22 +38,16 @@ st.markdown("""
         font-weight: bold; 
         margin-top: 8px;
     }
-    .product-row {
-        background-color: white;
-        padding: 15px;
-        border-radius: 8px;
-        border: 1px solid #e0e0e0;
-        margin-bottom: 12px;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
-    }
-    .lucro-verde { color: #28a745; font-weight: bold; }
-    .lucro-vermelho { color: #dc3545; font-weight: bold; }
+    /* Destaque para valores positivos e negativos */
+    .val-pos { color: #28a745; font-weight: bold; }
+    .val-neg { color: #dc3545; font-weight: bold; }
     
-    /* Ajuste para o botão DRE parecer um gráfico/botão */
-    .dre-button-area {
-        margin-top: 10px;
-        padding-top: 10px;
-        border-top: 1px solid #f0f0f0;
+    /* Estilo do Card de Promoção */
+    .promo-box {
+        padding: 15px;
+        background-color: #e8f4f8;
+        border-radius: 8px;
+        border-left: 5px solid #00a6ed;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -85,7 +74,7 @@ def calcular_frete_real(preco_final, frete_manual_input):
     else:
         return taxa_minima, "Tab. Mínima (<12)"
 
-st.title("🛒 Precificador ML Pro (Lista & DRE)")
+st.title("🛒 Precificador ML (Lista & DRE)")
 
 # --- 1. DADOS DE ENTRADA ---
 with st.container():
@@ -115,7 +104,7 @@ with col_input:
     preco_base = st.number_input("Preço Base (DE:)", value=32.57, step=0.01, format="%.2f")
 
 with col_promo:
-    st.markdown("<div class='promo-card'><b>⚡ Configurar Promoção</b>", unsafe_allow_html=True)
+    st.markdown("<div class='promo-box'><b>⚡ Configurar Promoção</b>", unsafe_allow_html=True)
     cp1, cp2 = st.columns(2)
     desconto_pct = cp1.number_input("% Desconto", value=13.0, step=0.5, format="%.1f")
     bonus_ml = cp2.number_input("Bônus ML (R$)", value=0.52, step=0.01, format="%.2f")
@@ -123,7 +112,7 @@ with col_promo:
     preco_final_venda = preco_base * (1 - (desconto_pct / 100))
     st.markdown(f"Preço Final (POR): <b>R$ {preco_final_venda:.2f}</b></div>", unsafe_allow_html=True)
 
-# --- 3. CÁLCULO IMEDIATO ---
+# --- 3. CÁLCULO ---
 frete_aplicado, nome_frete = calcular_frete_real(preco_final_venda, frete_anuncio)
 imposto_reais = preco_final_venda * (imposto_padrao / 100)
 comissao_reais = preco_final_venda * (taxa_ml / 100)
@@ -131,20 +120,15 @@ custos_totais = cmv + custo_extra + frete_aplicado + imposto_reais + comissao_re
 lucro_liquido = preco_final_venda - custos_totais + bonus_ml
 margem_final = (lucro_liquido / preco_final_venda * 100) if preco_final_venda > 0 else 0
 
-# Cards de Resumo Rápido
-st.markdown("### 👁️ Prévia do Item Atual")
+# --- 4. BOTÃO ADICIONAR ---
+st.markdown("### 👁️ Prévia do Item")
 k1, k2, k3 = st.columns(3)
 k1.metric("Frete Aplicado", f"R$ {frete_aplicado:.2f}", nome_frete)
 k2.metric("Lucro Líquido", f"R$ {lucro_liquido:.2f}", f"{margem_final:.1f}%")
 
-# --- 4. BOTÃO ADICIONAR ---
-add_col, _ = st.columns([1, 3])
-if add_col.button("➕ ADICIONAR À LISTA", type="primary"):
+if k3.button("➕ ADICIONAR À LISTA", type="primary", use_container_width=True):
     if nome_produto:
-        # Salva TUDO o que precisa para desenhar a DRE depois
-        # Importante: Criar um ID único baseado no tempo para evitar conflito de chave
         novo_id = int(time.time() * 1000)
-        
         novo_item = {
             "id": novo_id,
             "MLB": codigo_mlb,
@@ -165,80 +149,80 @@ if add_col.button("➕ ADICIONAR À LISTA", type="primary"):
             "Margem": margem_final
         }
         st.session_state.lista_produtos.append(novo_item)
-        st.success("Adicionado!")
+        st.success(f"{nome_produto} Adicionado!")
     else:
-        st.error("Nome do produto obrigatório")
+        st.error("Nome obrigatório")
 
-# --- 5. A LISTA DE PRODUTOS (COM DRE INTEGRADA) ---
+# --- 5. A LISTA (Visual Nativo) ---
 st.markdown("---")
 st.subheader(f"📋 Produtos na Lista ({len(st.session_state.lista_produtos)})")
 
 if len(st.session_state.lista_produtos) > 0:
     
-    # Cabeçalho da Lista
-    h1, h2, h3, h4 = st.columns([1, 3, 2, 2])
-    h1.markdown("**MLB**")
-    h2.markdown("**Produto**")
-    h3.markdown("**Preço Final**")
-    h4.markdown("**Lucro / Margem**")
-    
-    # Loop reverso para mostrar o último adicionado primeiro
-    for item in reversed(st.session_state.lista_produtos):
-        with st.container():
-            st.markdown(f"<div class='product-row'>", unsafe_allow_html=True)
-            
-            # Linha Resumo
-            c1, c2, c3, c4 = st.columns([1, 3, 2, 2])
-            c1.write(f"#{item['MLB']}")
-            c2.write(f"**{item['Produto']}**")
-            c3.write(f"R$ {item['PrecoFinal']:.2f}")
-            
-            cor_css = "lucro-verde" if item['Lucro'] > 0 else "lucro-vermelho"
-            c4.markdown(f"<span class='{cor_css}'>R$ {item['Lucro']:.2f} ({item['Margem']:.1f}%)</span>", unsafe_allow_html=True)
-            
-            # --- O GRÁFICO/BOTÃO DRE ---
-            # Usamos o st.expander como o "botão" que abre a DRE
-            # Importante: A chave (key) tem que ser única
-            with st.expander("📊 Ver DRE Detalhada"):
-                
-                html_dre = f"""
-                <div class='dre-container'>
-                    <div style='text-align: center; font-weight: bold; margin-bottom: 10px; color: #333;'>Demonstrativo do SKU {item['MLB']}</div>
-                    
-                    <div class='dre-row'><span>(+) Preço Tabela</span> <span>R$ {item['PrecoBase']:.2f}</span></div>
-                    <div class='dre-row' style='color:#dc3545'><span>(-) Desconto ({item['DescontoPct']}%)</span> <span>- R$ {(item['PrecoBase'] - item['PrecoFinal']):.2f}</span></div>
-                    <div class='dre-row' style='background:#f9f9f9; font-weight:bold'><span>(=) RECEITA BRUTA</span> <span>R$ {item['PrecoFinal']:.2f}</span></div>
-                    <br>
-                    <div class='dre-row'><span>(-) Impostos ({item['ImpostoPct']}%)</span> <span>- R$ {item['ImpostoVal']:.2f}</span></div>
-                    <div class='dre-row'><span>(-) Comissão ML ({item['ComissaoPct']}%)</span> <span>- R$ {item['ComissaoVal']:.2f}</span></div>
-                    <div class='dre-row'><span>(-) Frete ({item['FreteNome']})</span> <span>- R$ {item['FreteVal']:.2f}</span></div>
-                    <div class='dre-row'><span>(-) Custo (CMV)</span> <span>- R$ {item['CMV']:.2f}</span></div>
-                    <div class='dre-row'><span>(-) Extras</span> <span>- R$ {item['Extra']:.2f}</span></div>
-                    <br>
-                    <div class='dre-row' style='color:#28a745'><span>(+) Bônus / Rebate</span> <span>+ R$ {item['Bonus']:.2f}</span></div>
-                    
-                    <div class='dre-total'>
-                        <span>RESULTADO FINAL</span>
-                        <span style='color: {"#28a745" if item['Lucro'] > 0 else "#dc3545"}'>R$ {item['Lucro']:.2f} ({item['Margem']:.1f}%)</span>
-                    </div>
-                </div>
-                """
-                st.markdown(html_dre, unsafe_allow_html=True)
-            
-            st.markdown("</div>", unsafe_allow_html=True)
+    # Cabeçalho da Tabela Visual
+    cols = st.columns([1, 3, 2, 2])
+    cols[0].markdown("**MLB**")
+    cols[1].markdown("**Produto**")
+    cols[2].markdown("**Preço Final**")
+    cols[3].markdown("**Lucro**")
+    st.divider()
 
-    # Botões Finais
-    col_dl, col_cl = st.columns([1, 1])
+    # Loop para gerar as linhas
+    for item in reversed(st.session_state.lista_produtos):
+        
+        # 1. Linha com Dados Principais
+        c1, c2, c3, c4 = st.columns([1, 3, 2, 2])
+        
+        c1.write(f"#{item['MLB']}")
+        c2.write(f"**{item['Produto']}**")
+        c3.write(f"R$ {item['PrecoFinal']:.2f}")
+        
+        # Cor condicional do lucro
+        if item['Lucro'] > 0:
+            c4.markdown(f":green[**R$ {item['Lucro']:.2f}**] ({item['Margem']:.1f}%)")
+        else:
+            c4.markdown(f":red[**R$ {item['Lucro']:.2f}**] ({item['Margem']:.1f}%)")
+        
+        # 2. Expander com DRE (Abaixo da linha)
+        with st.expander(f"📊 Ver DRE do SKU {item['MLB']}"):
+            html_dre = f"""
+            <div class='dre-container'>
+                <div class='dre-row'><span>(+) Preço Tabela</span> <span>R$ {item['PrecoBase']:.2f}</span></div>
+                <div class='dre-row' style='color:#dc3545'><span>(-) Desconto ({item['DescontoPct']}%)</span> <span>- R$ {(item['PrecoBase'] - item['PrecoFinal']):.2f}</span></div>
+                <div class='dre-row' style='background:#f9f9f9; font-weight:bold'><span>(=) RECEITA BRUTA</span> <span>R$ {item['PrecoFinal']:.2f}</span></div>
+                <br>
+                <div class='dre-row'><span>(-) Impostos ({item['ImpostoPct']}%)</span> <span>- R$ {item['ImpostoVal']:.2f}</span></div>
+                <div class='dre-row'><span>(-) Comissão ML ({item['ComissaoPct']}%)</span> <span>- R$ {item['ComissaoVal']:.2f}</span></div>
+                <div class='dre-row'><span>(-) Frete ({item['FreteNome']})</span> <span>- R$ {item['FreteVal']:.2f}</span></div>
+                <div class='dre-row'><span>(-) Custo (CMV)</span> <span>- R$ {item['CMV']:.2f}</span></div>
+                <div class='dre-row'><span>(-) Extras</span> <span>- R$ {item['Extra']:.2f}</span></div>
+                <br>
+                <div class='dre-row' style='color:#28a745'><span>(+) Bônus / Rebate</span> <span>+ R$ {item['Bonus']:.2f}</span></div>
+                
+                <div class='dre-total'>
+                    <span>RESULTADO FINAL</span>
+                    <span class='{"val-pos" if item['Lucro'] > 0 else "val-neg"}'>R$ {item['Lucro']:.2f} ({item['Margem']:.1f}%)</span>
+                </div>
+            </div>
+            """
+            st.markdown(html_dre, unsafe_allow_html=True)
+            
+        st.divider() # Linha separadora nativa
+
+    # Botões de Ação
+    cb1, cb2 = st.columns([1, 1])
     
-    # Prepara CSV simples para download
     df_export = pd.DataFrame(st.session_state.lista_produtos)
     csv = df_export.to_csv(index=False).encode('utf-8')
+    cb1.download_button("📥 Baixar Excel", csv, "lista_ml.csv", "text/csv")
     
-    col_dl.download_button("📥 Baixar Lista em Excel", csv, "lista_ml.csv", "text/csv")
-    
-    if col_cl.button("🗑️ Limpar Lista"):
+    if cb2.button("🗑️ Limpar Lista"):
         st.session_state.lista_produtos = []
         reiniciar_app()
 
 else:
+    st.info("Lista vazia. Adicione produtos acima.")
+
+else:
     st.info("Nenhum produto adicionado ainda.")
+
