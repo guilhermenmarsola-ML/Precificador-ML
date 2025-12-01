@@ -24,12 +24,12 @@ st.markdown("""
 st.sidebar.header("⚙️ Taxas Globais")
 st.sidebar.info("Configure as taxas que valem para todos os produtos.")
 
-imposto_padrao = st.sidebar.number_input("Impostos Médios (%)", value=27.0, step=0.5)
-frete_limite = st.sidebar.number_input("Limite Frete Grátis (R$)", value=79.0)
-custo_fixo_transacao = st.sidebar.number_input("Custo Fixo por Venda (R$)", value=0.0)
+imposto_padrao = st.sidebar.number_input("Impostos Médios (%)", value=27.0, step=0.5, format="%.2f")
+frete_limite = st.sidebar.number_input("Limite Frete Grátis (R$)", value=79.0, step=1.0, format="%.2f")
+custo_fixo_transacao = st.sidebar.number_input("Custo Fixo por Venda (R$)", value=0.0, step=0.01, format="%.2f")
 
 st.sidebar.markdown("---")
-st.sidebar.caption("Versão 1.1 - Estratégia Híbrida")
+st.sidebar.caption("Versão 1.2 - Correção de Formato")
 
 # --- ÁREA PRINCIPAL ---
 st.title("💰 Precificador Mercado Livre (Modo ERP)")
@@ -41,22 +41,27 @@ with col1:
     st.subheader("📦 Custos do Produto")
     
     nome_produto = st.text_input("Nome do Produto", "Tela Sombreamento Toldo")
-    cmv = st.number_input("Custo do Produto (CMV) R$", value=36.59, min_value=0.0, format="%.2f")
+    
+    # CORREÇÃO AQUI: Adicionado step=0.01
+    cmv = st.number_input("Custo do Produto (CMV) R$", value=36.59, min_value=0.0, step=0.01, format="%.2f")
     
     st.markdown("---")
     st.write("**Taxas do Anúncio**")
-    taxa_ml = st.number_input("Comissão ML (%)", value=16.5, step=0.5)
-    frete_anuncio = st.number_input("Frete do Anúncio (R$)", value=18.86, min_value=0.0, format="%.2f")
+    taxa_ml = st.number_input("Comissão ML (%)", value=16.5, step=0.5, format="%.1f")
+    
+    # CORREÇÃO AQUI: Adicionado step=0.01
+    frete_anuncio = st.number_input("Frete do Anúncio (R$)", value=18.86, min_value=0.0, step=0.01, format="%.2f")
     
     tem_embalagem = st.checkbox("Custos Extras (Embalagem)?")
     custo_extra = 0.0
     if tem_embalagem:
-        custo_extra = st.number_input("Valor Extra (R$)", value=2.0)
+        # CORREÇÃO AQUI: Adicionado step=0.01
+        custo_extra = st.number_input("Valor Extra (R$)", value=2.0, step=0.01, format="%.2f")
 
 with col2:
     st.subheader("🎯 Definição de Lucro")
     
-    # --- SELETOR DE ESTRATÉGIA (ONDE VOCÊ PEDIU) ---
+    # --- SELETOR DE ESTRATÉGIA ---
     estrategia = st.radio(
         "Como você quer precificar?",
         ("Margem % sobre Venda", "Manter Lucro em Reais (ERP)"),
@@ -70,15 +75,16 @@ with col2:
 
     # LÓGICA CONDICIONAL
     if estrategia == "Margem % sobre Venda":
-        margem_alvo_percentual = st.number_input("Margem Líquida Desejada (%)", value=20.0, step=1.0)
+        margem_alvo_percentual = st.number_input("Margem Líquida Desejada (%)", value=20.0, step=1.0, format="%.1f")
         st.caption(f"O sistema buscará um preço onde sobrem {margem_alvo_percentual}% limpos.")
         
     else: # Estratégia ERP
         c_erp1, c_erp2 = st.columns(2)
         with c_erp1:
-            preco_erp = st.number_input("Preço de Venda no ERP (R$)", value=85.44, format="%.2f")
+            # CORREÇÃO AQUI: Adicionado step=0.01
+            preco_erp = st.number_input("Preço de Venda no ERP (R$)", value=85.44, step=0.01, format="%.2f")
         with c_erp2:
-            margem_erp = st.number_input("Margem no ERP (%)", value=20.0, step=1.0)
+            margem_erp = st.number_input("Margem no ERP (%)", value=20.0, step=1.0, format="%.1f")
         
         # Cálculo do Lucro em Reais que você quer "proteger"
         lucro_alvo_reais = preco_erp * (margem_erp / 100)
@@ -92,35 +98,37 @@ with col2:
     if estrategia == "Margem % sobre Venda":
         # Fórmula: Preço = Custos / (1 - (Taxas + Margem))
         divisor = 1 - ((taxa_ml + imposto_padrao + margem_alvo_percentual) / 100)
-        if divisor > 0:
+        if divisor > 0.0001: # Evitar divisão por zero
             preco_sugerido = custos_totais_absolutos / divisor
         else:
-            preco_sugerido = 0
+            preco_sugerido = 0.0
             st.error("Margem + Taxas ultrapassam 100%.")
             
     else: # Estratégia ERP
         # Fórmula: Preço = (Custos + Lucro em Reais) / (1 - Taxas)
-        # Aqui a margem não entra no divisor, pois o lucro já entrou como Custo Fixo no numerador
         numerador = custos_totais_absolutos + lucro_alvo_reais
         divisor = 1 - ((taxa_ml + imposto_padrao) / 100)
         
-        if divisor > 0:
+        if divisor > 0.0001: # Evitar divisão por zero
             preco_sugerido = numerador / divisor
         else:
-            preco_sugerido = 0
+            preco_sugerido = 0.0
             st.error("Taxas ultrapassam 100%.")
 
     # --- SIMULADOR MANUAL PARA COMPARAÇÃO ---
     st.markdown("---")
     st.write("#### 🔎 Simulador de Resultado")
-    preco_venda_manual = st.number_input("Preço de Venda Final (R$)", value=float(preco_sugerido) if preco_sugerido > 0 else 100.00, format="%.2f")
+    
+    # CORREÇÃO AQUI: Adicionado step=0.01
+    valor_inicial_simulador = float(preco_sugerido) if preco_sugerido > 0 else 100.00
+    preco_venda_manual = st.number_input("Preço de Venda Final (R$)", value=valor_inicial_simulador, step=0.01, format="%.2f")
 
     # DRE DO SIMULADOR
     v_comissao = preco_venda_manual * (taxa_ml / 100)
     v_imposto = preco_venda_manual * (imposto_padrao / 100)
     custo_total_venda = cmv + frete_anuncio + custo_extra + v_comissao + v_imposto + custo_fixo_transacao
     lucro_liquido_final = preco_venda_manual - custo_total_venda
-    margem_final = (lucro_liquido_final / preco_venda_manual * 100) if preco_venda_manual > 0 else 0
+    margem_final = (lucro_liquido_final / preco_venda_manual * 100) if preco_venda_manual > 0 else 0.0
 
     # EXIBIÇÃO RESULTADOS
     c1, c2, c3 = st.columns(3)
@@ -128,10 +136,8 @@ with col2:
     c2.metric("Lucro Líquido Real", f"R$ {lucro_liquido_final:.2f}")
     
     # Feedback visual se bateu a meta
-    meta_batida = False
     if estrategia == "Manter Lucro em Reais (ERP)":
         if lucro_liquido_final >= (lucro_alvo_reais - 0.05): # Tolerância de centavos
-            meta_batida = True
             c3.metric("Status", "Meta Atingida ✅", f"Dif: R$ {lucro_liquido_final - lucro_alvo_reais:.2f}")
         else:
             c3.metric("Status", "Abaixo da Meta 🔻", f"Falta: R$ {lucro_alvo_reais - lucro_liquido_final:.2f}", delta_color="inverse")
@@ -150,8 +156,3 @@ with col2:
         | (-) Custo Produto | R$ {cmv:.2f} |
         | **(=) Lucro Líquido** | **R$ {lucro_liquido_final:.2f}** |
         """)
-
-# Seção de Aviso de Frete
-if preco_venda_analise < frete_limite and frete_anuncio > 0:
-
-    st.warning(f"⚠️ Atenção: Seu preço está abaixo de R$ {frete_limite}. Verifique se o frete é pago pelo comprador ou se há taxa fixa adicional do ML.")
