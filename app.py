@@ -3,7 +3,7 @@ import pandas as pd
 import time
 
 # --- CONFIGURAÇÃO INICIAL ---
-st.set_page_config(page_title="Gerenciador ML - V7 (Layout Corrigido)", layout="wide")
+st.set_page_config(page_title="Gerenciador ML - V8 Final", layout="wide")
 
 # Função Universal de Reinício
 def reiniciar_app():
@@ -18,36 +18,44 @@ def reiniciar_app():
 if 'lista_produtos' not in st.session_state:
     st.session_state.lista_produtos = []
 
-# --- CSS (APENAS PARA DETALHES INTERNOS, SEM QUEBRAR LAYOUT) ---
+# --- CSS (ESTILO) ---
 st.markdown("""
 <style>
-    .dre-container { 
-        background-color: #ffffff; 
-        padding: 15px; 
-        border-radius: 5px; 
-        border: 1px solid #e0e0e0;
-        font-family: monospace;
-        font-size: 14px;
-    }
-    .dre-row { display: flex; justify-content: space-between; border-bottom: 1px dashed #eee; padding: 4px 0; }
-    .dre-total { 
-        display: flex; justify-content: space-between; 
-        background-color: #f1f3f4; 
-        padding: 8px; 
-        border-radius: 4px; 
-        font-weight: bold; 
-        margin-top: 8px;
-    }
-    /* Destaque para valores positivos e negativos */
-    .val-pos { color: #28a745; font-weight: bold; }
-    .val-neg { color: #dc3545; font-weight: bold; }
-    
     /* Estilo do Card de Promoção */
     .promo-box {
         padding: 15px;
         background-color: #e8f4f8;
         border-radius: 8px;
         border-left: 5px solid #00a6ed;
+        margin-bottom: 20px;
+    }
+    
+    /* Container do DRE */
+    .dre-box {
+        background-color: white;
+        border: 1px solid #ddd;
+        border-radius: 8px;
+        padding: 15px;
+        font-family: 'Courier New', Courier, monospace; /* Fonte tipo nota fiscal */
+        font-size: 14px;
+        margin-top: 10px;
+    }
+    
+    .dre-line {
+        display: flex;
+        justify-content: space-between;
+        padding: 4px 0;
+        border-bottom: 1px dashed #eee;
+    }
+    
+    .dre-result {
+        display: flex;
+        justify-content: space-between;
+        padding: 10px 0;
+        border-top: 2px solid #333;
+        margin-top: 10px;
+        font-weight: bold;
+        font-size: 16px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -153,13 +161,13 @@ if k3.button("➕ ADICIONAR À LISTA", type="primary", use_container_width=True)
     else:
         st.error("Nome obrigatório")
 
-# --- 5. A LISTA (Visual Nativo) ---
+# --- 5. A LISTA (COM DRE CORRIGIDA) ---
 st.markdown("---")
 st.subheader(f"📋 Produtos na Lista ({len(st.session_state.lista_produtos)})")
 
 if len(st.session_state.lista_produtos) > 0:
     
-    # Cabeçalho da Tabela Visual
+    # Cabeçalho da Tabela
     cols = st.columns([1, 3, 2, 2])
     cols[0].markdown("**MLB**")
     cols[1].markdown("**Produto**")
@@ -167,51 +175,80 @@ if len(st.session_state.lista_produtos) > 0:
     cols[3].markdown("**Lucro**")
     st.divider()
 
-    # Loop para gerar as linhas
+    # Loop
     for item in reversed(st.session_state.lista_produtos):
         
-        # 1. Linha com Dados Principais
         c1, c2, c3, c4 = st.columns([1, 3, 2, 2])
         
         c1.write(f"#{item['MLB']}")
         c2.write(f"**{item['Produto']}**")
         c3.write(f"R$ {item['PrecoFinal']:.2f}")
         
-        # Cor condicional do lucro
         if item['Lucro'] > 0:
             c4.markdown(f":green[**R$ {item['Lucro']:.2f}**] ({item['Margem']:.1f}%)")
         else:
             c4.markdown(f":red[**R$ {item['Lucro']:.2f}**] ({item['Margem']:.1f}%)")
         
-        # 2. Expander com DRE (Abaixo da linha)
-        with st.expander(f"📊 Ver DRE do SKU {item['MLB']}"):
+        # Expander DRE (Abaixo da linha)
+        with st.expander(f"📊 Ver DRE Detalhada - {item['MLB']}"):
+            
+            # Definição de Cores para HTML
+            cor_lucro = "#28a745" if item['Lucro'] > 0 else "#dc3545" # Verde ou Vermelho
+            
+            # HTML Montado Manualmente para garantir o visual
             html_dre = f"""
-            <div class='dre-container'>
-                <div class='dre-row'><span>(+) Preço Tabela</span> <span>R$ {item['PrecoBase']:.2f}</span></div>
-                <div class='dre-row' style='color:#dc3545'><span>(-) Desconto ({item['DescontoPct']}%)</span> <span>- R$ {(item['PrecoBase'] - item['PrecoFinal']):.2f}</span></div>
-                <div class='dre-row' style='background:#f9f9f9; font-weight:bold'><span>(=) RECEITA BRUTA</span> <span>R$ {item['PrecoFinal']:.2f}</span></div>
+            <div class='dre-box'>
+                <div class='dre-line'>
+                    <span>(+) Preço Tabela</span>
+                    <span>R$ {item['PrecoBase']:.2f}</span>
+                </div>
+                <div class='dre-line' style='color: #dc3545;'>
+                    <span>(-) Desconto ({item['DescontoPct']}%)</span>
+                    <span>- R$ {(item['PrecoBase'] - item['PrecoFinal']):.2f}</span>
+                </div>
+                <div class='dre-line' style='background-color: #f0f0f0; font-weight: bold;'>
+                    <span>(=) PREÇO VENDA</span>
+                    <span>R$ {item['PrecoFinal']:.2f}</span>
+                </div>
                 <br>
-                <div class='dre-row'><span>(-) Impostos ({item['ImpostoPct']}%)</span> <span>- R$ {item['ImpostoVal']:.2f}</span></div>
-                <div class='dre-row'><span>(-) Comissão ML ({item['ComissaoPct']}%)</span> <span>- R$ {item['ComissaoVal']:.2f}</span></div>
-                <div class='dre-row'><span>(-) Frete ({item['FreteNome']})</span> <span>- R$ {item['FreteVal']:.2f}</span></div>
-                <div class='dre-row'><span>(-) Custo (CMV)</span> <span>- R$ {item['CMV']:.2f}</span></div>
-                <div class='dre-row'><span>(-) Extras</span> <span>- R$ {item['Extra']:.2f}</span></div>
+                <div class='dre-line'>
+                    <span>(-) Impostos ({item['ImpostoPct']}%)</span>
+                    <span>- R$ {item['ImpostoVal']:.2f}</span>
+                </div>
+                <div class='dre-line'>
+                    <span>(-) Comissão ML ({item['ComissaoPct']}%)</span>
+                    <span>- R$ {item['ComissaoVal']:.2f}</span>
+                </div>
+                <div class='dre-line'>
+                    <span>(-) Frete ({item['FreteNome']})</span>
+                    <span>- R$ {item['FreteVal']:.2f}</span>
+                </div>
+                <div class='dre-line'>
+                    <span>(-) Custo (CMV)</span>
+                    <span>- R$ {item['CMV']:.2f}</span>
+                </div>
+                <div class='dre-line'>
+                    <span>(-) Custos Extras</span>
+                    <span>- R$ {item['Extra']:.2f}</span>
+                </div>
                 <br>
-                <div class='dre-row' style='color:#28a745'><span>(+) Bônus / Rebate</span> <span>+ R$ {item['Bonus']:.2f}</span></div>
+                <div class='dre-line' style='color: #007bff; font-weight: bold;'>
+                    <span>(+) Bônus / Rebate</span>
+                    <span>+ R$ {item['Bonus']:.2f}</span>
+                </div>
                 
-                <div class='dre-total'>
+                <div class='dre-result' style='color: {cor_lucro}; border-top: 2px solid {cor_lucro};'>
                     <span>RESULTADO FINAL</span>
-                    <span class='{"val-pos" if item['Lucro'] > 0 else "val-neg"}'>R$ {item['Lucro']:.2f} ({item['Margem']:.1f}%)</span>
+                    <span>R$ {item['Lucro']:.2f} ({item['Margem']:.1f}%)</span>
                 </div>
             </div>
             """
             st.markdown(html_dre, unsafe_allow_html=True)
             
-        st.divider() # Linha separadora nativa
+        st.divider()
 
-    # Botões de Ação
+    # Botões
     cb1, cb2 = st.columns([1, 1])
-    
     df_export = pd.DataFrame(st.session_state.lista_produtos)
     csv = df_export.to_csv(index=False).encode('utf-8')
     cb1.download_button("📥 Baixar Excel", csv, "lista_ml.csv", "text/csv")
@@ -222,5 +259,4 @@ if len(st.session_state.lista_produtos) > 0:
 
 else:
     st.info("Lista vazia. Adicione produtos acima.")
-
 
