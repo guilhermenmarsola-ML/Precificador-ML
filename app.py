@@ -3,22 +3,22 @@ import pandas as pd
 import time
 
 # --- CONFIGURAÇÃO INICIAL ---
-st.set_page_config(page_title="Precificador ML - V20 Final", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Precificador ML - V21 Final", layout="wide", page_icon="⚡")
 
 # --- GERENCIAMENTO DE ESTADO ---
 if 'lista_produtos' not in st.session_state:
     st.session_state.lista_produtos = []
 
-# Inicializa variáveis
 def init_state(key, value):
     if key not in st.session_state:
         st.session_state[key] = value
 
+# Variáveis do Formulário de Cadastro
 init_state('n_mlb', 'MLB-')
 init_state('n_nome', '')
 init_state('n_cmv', 32.57)
 init_state('n_extra', 0.00)
-# Persistentes
+# Variáveis Persistentes
 init_state('n_frete', 18.86)
 init_state('n_taxa', 16.5)
 init_state('n_erp', 85.44)
@@ -102,14 +102,14 @@ def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, i
         
     return preco_est_1, "Frete Manual"
 
-# --- FUNÇÃO CALLBACK (O SEGREDINHO QUE RESOLVE TUDO) ---
+# --- CALLBACKS (A MÁGICA DA ATUALIZAÇÃO SEM ERRO) ---
+
 def adicionar_produto_action():
-    # 1. Validar Nome
     if not st.session_state.n_nome:
         st.error("Digite o nome do produto!")
         return
 
-    # 2. Recalcular Sugestão (Para garantir consistência)
+    # Recalcula sugestão
     lucro_alvo = st.session_state.n_erp * (st.session_state.n_merp / 100)
     preco_sug, _ = calcular_preco_sugerido_reverso(
         st.session_state.n_cmv + st.session_state.n_extra,
@@ -119,7 +119,6 @@ def adicionar_produto_action():
         st.session_state.n_frete
     )
 
-    # 3. Criar e Salvar Item
     novo_item = {
         "id": int(time.time() * 1000),
         "MLB": st.session_state.n_mlb,
@@ -137,12 +136,17 @@ def adicionar_produto_action():
     st.session_state.lista_produtos.append(novo_item)
     st.toast("Produto salvo!", icon="✅")
 
-    # 4. Limpar Campos (Apenas os variáveis)
+    # Limpeza
     st.session_state.n_mlb = "MLB-"
     st.session_state.n_nome = ""
     st.session_state.n_cmv = 0.00
     st.session_state.n_extra = 0.00
-    # Taxas mantêm o estado
+
+def atualizar_item_lista(idx, key_field):
+    # Esta função é chamada automaticamente quando um input na lista é alterado
+    # O Streamlit já atualiza o valor no session_state[key], nós só precisamos sincronizar com a lista
+    # Como os widgets estão ligados diretamente aos valores, neste caso apenas garantimos o refresh limpo
+    pass 
 
 # --- CABEÇALHO ---
 st.title("⚡ Precificador ML Pro")
@@ -170,7 +174,6 @@ with st.container(border=True):
 # ==============================================================================
 # ÁREA 2: SUGESTÃO
 # ==============================================================================
-# Cálculo apenas para visualização prévia
 lucro_alvo_view = st.session_state.n_erp * (st.session_state.n_merp / 100)
 preco_sug_view, nome_frete_view = calcular_preco_sugerido_reverso(
     st.session_state.n_cmv + st.session_state.n_extra, 
@@ -198,12 +201,10 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# BOTÃO ADICIONAR
-# A mágica acontece no on_click
 st.button("⬇️ ADICIONAR PRODUTO À LISTA", type="primary", use_container_width=True, on_click=adicionar_produto_action)
 
 # ==============================================================================
-# ÁREA 3: LISTA DE GESTÃO
+# ÁREA 3: LISTA DE GESTÃO (COM EDIÇÃO VIVA)
 # ==============================================================================
 if st.session_state.lista_produtos:
     st.markdown("### 📋 Produtos Precificados")
@@ -214,11 +215,16 @@ if st.session_state.lista_produtos:
     cols[2].caption("LUCRO / MARGEM")
     cols[3].caption("AÇÕES")
     
-    for i, item in enumerate(reversed(st.session_state.lista_produtos)):
+    # Loop com índices para acessar a lista diretamente
+    # Usamos enumerate na lista invertida, mas precisamos mapear para o índice real
+    total_itens = len(st.session_state.lista_produtos)
+    
+    for i in range(total_itens - 1, -1, -1):
+        item = st.session_state.lista_produtos[i]
         
         with st.container(border=True):
             
-            # --- CÁLCULOS ---
+            # --- CÁLCULOS (SEMPRE ATUALIZADOS) ---
             preco_base_calc = item['PrecoBase']
             desc_calc = item['DescontoPct']
             preco_final_calc = preco_base_calc * (1 - (desc_calc / 100))
@@ -232,7 +238,7 @@ if st.session_state.lista_produtos:
             lucro_final = preco_final_calc - custos_totais + item['Bonus']
             margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
             
-            # --- LINHA ---
+            # --- DISPLAY ---
             c1, c2, c3, c4 = st.columns([1, 3, 2, 1])
             c1.write(f"**{item['MLB']}**")
             c2.write(item['Produto'])
@@ -240,28 +246,39 @@ if st.session_state.lista_produtos:
             cor_css = "text-success" if lucro_final > 0 else "text-danger"
             c3.markdown(f"<span class='{cor_css}'>R$ {lucro_final:.2f}</span> ({margem_final:.1f}%)", unsafe_allow_html=True)
                 
-            if c4.button("🗑️", key=f"del_{item['id']}"):
-                st.session_state.lista_produtos.remove(item)
-                try: st.rerun() 
-                except: st.experimental_rerun()
+            def deletar_item(index_to_delete=i):
+                del st.session_state.lista_produtos[index_to_delete]
 
-            # --- EXPANDER ---
+            c4.button("🗑️", key=f"del_{item['id']}", on_click=deletar_item)
+
+            # --- EDIÇÃO ---
             with st.expander(f"✏️ Editar / DRE - {item['Produto']}"):
                 
-                ec1, ec2, ec3 = st.columns(3)
-                novo_preco = ec1.number_input("Preço Tabela (DE)", value=float(item['PrecoBase']), step=0.5, key=f"pb_{item['id']}")
-                novo_desc = ec2.number_input("Desconto (%)", value=float(item['DescontoPct']), step=0.5, key=f"dc_{item['id']}")
-                novo_bonus = ec3.number_input("Bônus ML (R$)", value=float(item['Bonus']), step=0.01, key=f"bn_{item['id']}")
+                # Funções de Callback para atualizar cada campo específico
+                def update_preco(idx=i, key=f"pb_{item['id']}"):
+                    st.session_state.lista_produtos[idx]['PrecoBase'] = st.session_state[key]
                 
-                if (novo_preco != item['PrecoBase'] or novo_desc != item['DescontoPct'] or novo_bonus != item['Bonus']):
-                    item['PrecoBase'] = novo_preco
-                    item['DescontoPct'] = novo_desc
-                    item['Bonus'] = novo_bonus
-                    try: st.rerun() 
-                    except: st.experimental_rerun()
+                def update_desc(idx=i, key=f"dc_{item['id']}"):
+                    st.session_state.lista_produtos[idx]['DescontoPct'] = st.session_state[key]
+                
+                def update_bonus(idx=i, key=f"bn_{item['id']}"):
+                    st.session_state.lista_produtos[idx]['Bonus'] = st.session_state[key]
+
+                def update_cmv(idx=i, key=f"cmv_{item['id']}"):
+                    st.session_state.lista_produtos[idx]['CMV'] = st.session_state[key]
+
+                ec1, ec2, ec3, ec4 = st.columns(4)
+                
+                # INPUTS COM CALLBACK (ON_CHANGE)
+                # Isso evita o erro de rerun no meio do loop
+                ec1.number_input("Preço Tabela", value=float(item['PrecoBase']), step=0.5, key=f"pb_{item['id']}", on_change=update_preco)
+                ec2.number_input("Desconto %", value=float(item['DescontoPct']), step=0.5, key=f"dc_{item['id']}", on_change=update_desc)
+                ec3.number_input("Bônus R$", value=float(item['Bonus']), step=0.01, key=f"bn_{item['id']}", on_change=update_bonus)
+                ec4.number_input("CMV", value=float(item['CMV']), step=0.5, key=f"cmv_{item['id']}", on_change=update_cmv)
 
                 st.divider()
                 
+                # --- DRE ---
                 d1, d2 = st.columns([3, 1])
                 d1.write("(+) Preço Tabela")
                 d2.write(f"R$ {preco_base_calc:.2f}")
@@ -320,10 +337,12 @@ if st.session_state.lista_produtos:
     df_final = pd.DataFrame(dados_csv)
     csv = df_final.to_csv(index=False).encode('utf-8')
     col_csv.download_button("📥 Baixar Excel Completo", csv, "precificacao_ml.csv", "text/csv")
-    if col_clr.button("🗑️ Limpar Lista"):
+    
+    def limpar_lista():
         st.session_state.lista_produtos = []
-        try: st.rerun() 
-        except: st.experimental_rerun()
+        
+    if col_clr.button("🗑️ Limpar Lista", on_click=limpar_lista):
+        pass
 
 else:
     st.info("Lista vazia. Adicione produtos acima.")
