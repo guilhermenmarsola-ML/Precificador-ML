@@ -1,8 +1,19 @@
 import streamlit as st
 import pandas as pd
+import time
 
 # --- CONFIGURAÇÃO INICIAL ---
-st.set_page_config(page_title="Gerenciador ML - V6.1", layout="wide")
+st.set_page_config(page_title="Gerenciador ML - V6.2 (Blindada)", layout="wide")
+
+# Função Universal de Reinício (Funciona em qualquer versão)
+def reiniciar_app():
+    try:
+        st.rerun()
+    except AttributeError:
+        try:
+            st.experimental_rerun()
+        except:
+            st.warning("Por favor, pressione F5 ou 'R' para atualizar a lista.")
 
 if 'lista_produtos' not in st.session_state:
     st.session_state.lista_produtos = []
@@ -21,6 +32,7 @@ st.markdown("""
         border: 1px solid #e0e0e0;
         margin-top: 10px;
         font-family: monospace;
+        font-size: 14px;
     }
     .dre-row { display: flex; justify-content: space-between; border-bottom: 1px dashed #eee; padding: 4px 0; }
     .dre-total { 
@@ -33,14 +45,21 @@ st.markdown("""
     }
     .product-row {
         background-color: white;
-        padding: 10px;
+        padding: 15px;
         border-radius: 8px;
-        border: 1px solid #f0f0f0;
-        margin-bottom: 10px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        border: 1px solid #e0e0e0;
+        margin-bottom: 12px;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
     }
     .lucro-verde { color: #28a745; font-weight: bold; }
     .lucro-vermelho { color: #dc3545; font-weight: bold; }
+    
+    /* Ajuste para o botão DRE parecer um gráfico/botão */
+    .dre-button-area {
+        margin-top: 10px;
+        padding-top: 10px;
+        border-top: 1px solid #f0f0f0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -66,7 +85,7 @@ def calcular_frete_real(preco_final, frete_manual_input):
     else:
         return taxa_minima, "Tab. Mínima (<12)"
 
-st.title("🛒 Precificador ML Pro (Lista Dinâmica)")
+st.title("🛒 Precificador ML Pro (Lista & DRE)")
 
 # --- 1. DADOS DE ENTRADA ---
 with st.container():
@@ -120,11 +139,14 @@ k2.metric("Lucro Líquido", f"R$ {lucro_liquido:.2f}", f"{margem_final:.1f}%")
 
 # --- 4. BOTÃO ADICIONAR ---
 add_col, _ = st.columns([1, 3])
-if add_col.button("➕ ADICIONAR À LISTA"):
+if add_col.button("➕ ADICIONAR À LISTA", type="primary"):
     if nome_produto:
         # Salva TUDO o que precisa para desenhar a DRE depois
+        # Importante: Criar um ID único baseado no tempo para evitar conflito de chave
+        novo_id = int(time.time() * 1000)
+        
         novo_item = {
-            "id": len(st.session_state.lista_produtos) + 1,
+            "id": novo_id,
             "MLB": codigo_mlb,
             "Produto": nome_produto,
             "PrecoBase": preco_base,
@@ -176,11 +198,12 @@ if len(st.session_state.lista_produtos) > 0:
             
             # --- O GRÁFICO/BOTÃO DRE ---
             # Usamos o st.expander como o "botão" que abre a DRE
+            # Importante: A chave (key) tem que ser única
             with st.expander("📊 Ver DRE Detalhada"):
                 
                 html_dre = f"""
                 <div class='dre-container'>
-                    <div style='text-align: center; font-weight: bold; margin-bottom: 10px;'>Demonstrativo do SKU {item['MLB']}</div>
+                    <div style='text-align: center; font-weight: bold; margin-bottom: 10px; color: #333;'>Demonstrativo do SKU {item['MLB']}</div>
                     
                     <div class='dre-row'><span>(+) Preço Tabela</span> <span>R$ {item['PrecoBase']:.2f}</span></div>
                     <div class='dre-row' style='color:#dc3545'><span>(-) Desconto ({item['DescontoPct']}%)</span> <span>- R$ {(item['PrecoBase'] - item['PrecoFinal']):.2f}</span></div>
@@ -196,7 +219,7 @@ if len(st.session_state.lista_produtos) > 0:
                     
                     <div class='dre-total'>
                         <span>RESULTADO FINAL</span>
-                        <span style='color: {"#28a745" if item['Lucro'] > 0 else "#dc3545"}'>R$ {item['Lucro']:.2f}</span>
+                        <span style='color: {"#28a745" if item['Lucro'] > 0 else "#dc3545"}'>R$ {item['Lucro']:.2f} ({item['Margem']:.1f}%)</span>
                     </div>
                 </div>
                 """
@@ -215,8 +238,7 @@ if len(st.session_state.lista_produtos) > 0:
     
     if col_cl.button("🗑️ Limpar Lista"):
         st.session_state.lista_produtos = []
-        st.rerun() # CORREÇÃO AQUI: Mudado de experimental_rerun para rerun
+        reiniciar_app()
 
 else:
     st.info("Nenhum produto adicionado ainda.")
-
