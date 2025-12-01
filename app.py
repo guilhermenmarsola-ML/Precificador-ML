@@ -1,158 +1,172 @@
 import streamlit as st
 import pandas as pd
 
-# Configuração da Página
-st.set_page_config(page_title="Calculadora ML - Estratégia ERP", layout="wide")
+# --- CONFIGURAÇÃO INICIAL ---
+st.set_page_config(page_title="Gerenciador ML - V2", layout="wide")
 
-# --- CSS para visual ---
+# Inicializa a lista de produtos na memória do navegador (Session State)
+if 'lista_produtos' not in st.session_state:
+    st.session_state.lista_produtos = []
+
+# --- CSS (ESTILO) ---
 st.markdown("""
 <style>
-    .metric-card {
-        background-color: #f0f2f6;
-        padding: 20px;
-        border-radius: 10px;
-        border-left: 5px solid #ffc107;
-    }
-    .stRadio > label {
-        font-weight: bold;
-        font-size: 18px;
-    }
+    .metric-card { background-color: #f0f2f6; padding: 15px; border-radius: 8px; border-left: 5px solid #28a745; }
+    .stButton>button { width: 100%; background-color: #ffc107; color: black; font-weight: bold; }
+    .big-font { font-size: 20px !important; font-weight: bold; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- BARRA LATERAL (Configurações Fixas) ---
-st.sidebar.header("⚙️ Taxas Globais")
-st.sidebar.info("Configure as taxas que valem para todos os produtos.")
-
+# --- SIDEBAR (CONFIGURAÇÕES GLOBAIS) ---
+st.sidebar.header("⚙️ Configurações Globais")
 imposto_padrao = st.sidebar.number_input("Impostos Médios (%)", value=27.0, step=0.5, format="%.2f")
 frete_limite = st.sidebar.number_input("Limite Frete Grátis (R$)", value=79.0, step=1.0, format="%.2f")
 custo_fixo_transacao = st.sidebar.number_input("Custo Fixo por Venda (R$)", value=0.0, step=0.01, format="%.2f")
-
 st.sidebar.markdown("---")
-st.sidebar.caption("Versão 1.2 - Correção de Formato")
+st.sidebar.info("Preencha os dados à direita e clique em 'Adicionar' para montar sua lista.")
 
-# --- ÁREA PRINCIPAL ---
-st.title("💰 Precificador Mercado Livre (Modo ERP)")
-st.markdown("Defina se quer ganhar uma **porcentagem** ou garantir o **lucro em reais do ERP**.")
+# --- TÍTULO ---
+st.title("🛒 Gerenciador de Precificação ML")
 
-col1, col2 = st.columns([1, 1.3])
+# --- ÁREA DE INPUTS (DADOS DO PRODUTO) ---
+with st.container():
+    c1, c2, c3, c4 = st.columns([1, 2, 1, 1])
+    with c1:
+        codigo_mlb = st.text_input("Código MLB", "MLB-")
+    with c2:
+        nome_produto = st.text_input("Nome do Produto", "")
+    with c3:
+        # Custo do Produto
+        cmv = st.number_input("Custo (CMV) R$", value=0.0, step=0.01, format="%.2f", min_value=0.0)
+    with c4:
+        # Preço Atual (o que você já pratica)
+        preco_atual = st.number_input("Preço Atual (R$)", value=0.0, step=0.01, format="%.2f", min_value=0.0, help="Preço que está no anúncio hoje")
 
-with col1:
-    st.subheader("📦 Custos do Produto")
-    
-    nome_produto = st.text_input("Nome do Produto", "Tela Sombreamento Toldo")
-    
-    # CORREÇÃO AQUI: Adicionado step=0.01
-    cmv = st.number_input("Custo do Produto (CMV) R$", value=36.59, min_value=0.0, step=0.01, format="%.2f")
-    
     st.markdown("---")
-    st.write("**Taxas do Anúncio**")
-    taxa_ml = st.number_input("Comissão ML (%)", value=16.5, step=0.5, format="%.1f")
     
-    # CORREÇÃO AQUI: Adicionado step=0.01
-    frete_anuncio = st.number_input("Frete do Anúncio (R$)", value=18.86, min_value=0.0, step=0.01, format="%.2f")
+    col_custos, col_estrategia = st.columns(2)
     
-    tem_embalagem = st.checkbox("Custos Extras (Embalagem)?")
-    custo_extra = 0.0
-    if tem_embalagem:
-        # CORREÇÃO AQUI: Adicionado step=0.01
-        custo_extra = st.number_input("Valor Extra (R$)", value=2.0, step=0.01, format="%.2f")
+    with col_custos:
+        st.subheader("📦 Taxas e Custos")
+        cc1, cc2 = st.columns(2)
+        with cc1:
+            taxa_ml = st.number_input("Comissão ML (%)", value=16.5, step=0.5, format="%.1f")
+            frete_anuncio = st.number_input("Frete Anúncio (R$)", value=18.90, step=0.01, format="%.2f")
+        with cc2:
+            custo_extra = st.number_input("Embalagem/Outros (R$)", value=0.0, step=0.01, format="%.2f")
+            
+    with col_estrategia:
+        st.subheader("🎯 Definição de Meta")
+        tipo_meta = st.radio("Sua Meta é:", ("Margem %", "Lucro Fixo (ERP)"), horizontal=True)
+        
+        meta_valor = 0.0
+        lucro_alvo_reais = 0.0
+        
+        if tipo_meta == "Margem %":
+            meta_valor = st.number_input("Margem Desejada (%)", value=20.0, step=1.0, format="%.1f")
+        else:
+            cm1, cm2 = st.columns(2)
+            p_erp = cm1.number_input("Preço Base ERP (R$)", value=0.0, step=0.01, format="%.2f")
+            m_erp = cm2.number_input("Margem ERP (%)", value=20.0, step=1.0, format="%.1f")
+            lucro_alvo_reais = p_erp * (m_erp / 100)
+            st.caption(f"Meta: Garantir R$ {lucro_alvo_reais:.2f} de lucro.")
 
-with col2:
-    st.subheader("🎯 Definição de Lucro")
+# --- CÁLCULOS (MOTOR MATEMÁTICO) ---
+
+# 1. Calcular Resultados do Preço ATUAL (O que você digitou)
+custos_fixos_venda = cmv + frete_anuncio + custo_extra + custo_fixo_transacao
+imposto_atual = preco_atual * (imposto_padrao / 100)
+comissao_atual = preco_atual * (taxa_ml / 100)
+custo_total_atual = custos_fixos_venda + imposto_atual + comissao_atual
+lucro_atual = preco_atual - custo_total_atual
+margem_atual_pct = (lucro_atual / preco_atual * 100) if preco_atual > 0 else 0
+
+# 2. Calcular Preço SUGERIDO (Engenharia Reversa)
+preco_sugerido = 0.0
+if tipo_meta == "Margem %":
+    divisor = 1 - ((taxa_ml + imposto_padrao + meta_valor) / 100)
+    if divisor > 0.0001:
+        preco_sugerido = custos_fixos_venda / divisor
+else:
+    # Meta ERP (Lucro em Reais Fixo)
+    numerador = custos_fixos_venda + lucro_alvo_reais
+    divisor = 1 - ((taxa_ml + imposto_padrao) / 100)
+    if divisor > 0.0001:
+        preco_sugerido = numerador / divisor
+
+# Calcular lucro do sugerido para exibir
+imposto_sug = preco_sugerido * (imposto_padrao / 100)
+comissao_sug = preco_sugerido * (taxa_ml / 100)
+lucro_sugerido = preco_sugerido - (custos_fixos_venda + imposto_sug + comissao_sug)
+margem_sugerida_pct = (lucro_sugerido / preco_sugerido * 100) if preco_sugerido > 0 else 0
+
+# --- EXIBIÇÃO COMPARATIVA ---
+st.markdown("### 📊 Comparativo: Atual vs Sugerido")
+kpi1, kpi2, kpi3, kpi4 = st.columns(4)
+
+# KPI 1: Preço Atual (Entrada)
+kpi1.metric("Preço Atual", f"R$ {preco_atual:.2f}", help="Preço que você informou")
+
+# KPI 2: Lucro Atual (Resultado Real)
+cor_delta = "normal" if lucro_atual > 0 else "inverse"
+kpi2.metric("Lucro Real (Atual)", f"R$ {lucro_atual:.2f}", f"{margem_atual_pct:.1f}% Margem", delta_color=cor_delta)
+
+# KPI 3: Preço Sugerido (Meta)
+kpi3.metric("Preço Sugerido (Meta)", f"R$ {preco_sugerido:.2f}", help="Preço ideal para atingir sua meta")
+
+# KPI 4: Diferença
+diff = preco_sugerido - preco_atual
+kpi4.metric("Diferença de Preço", f"R$ {diff:.2f}", "Ajuste necessário", delta_color="off")
+
+# --- BOTÃO DE ADICIONAR ---
+st.markdown("---")
+col_btn, col_blank = st.columns([1, 2])
+
+with col_btn:
+    add_btn = st.button("➕ Adicionar Produto à Lista")
+
+if add_btn:
+    if nome_produto == "":
+        st.warning("Preencha o nome do produto antes de adicionar.")
+    else:
+        # Cria um dicionário com os dados da linha
+        novo_item = {
+            "MLB": codigo_mlb,
+            "Produto": nome_produto,
+            "Preço Atual": round(preco_atual, 2),
+            "Lucro Atual (R$)": round(lucro_atual, 2),
+            "Margem Atual (%)": round(margem_atual_pct, 1),
+            "Preço Sugerido": round(preco_sugerido, 2),
+            "Lucro Sugerido (R$)": round(lucro_sugerido, 2),
+            "Margem Sugerida (%)": round(margem_sugerida_pct, 1),
+            "CMV": cmv,
+            "Frete": frete_anuncio
+        }
+        # Adiciona à memória
+        st.session_state.lista_produtos.append(novo_item)
+        st.success(f"Produto '{nome_produto}' adicionado com sucesso!")
+
+# --- TABELA DE PRODUTOS ---
+if len(st.session_state.lista_produtos) > 0:
+    st.markdown("### 📝 Lista de Produtos Precificados")
     
-    # --- SELETOR DE ESTRATÉGIA ---
-    estrategia = st.radio(
-        "Como você quer precificar?",
-        ("Margem % sobre Venda", "Manter Lucro em Reais (ERP)"),
-        horizontal=True
+    df_produtos = pd.DataFrame(st.session_state.lista_produtos)
+    
+    # Mostra a tabela interativa
+    st.dataframe(df_produtos, use_container_width=True)
+    
+    # Botão para baixar CSV (Estilo Planilha)
+    csv = df_produtos.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="📥 Baixar Lista em Excel (CSV)",
+        data=csv,
+        file_name='precificacao_ml.csv',
+        mime='text/csv',
     )
     
-    st.markdown("---")
-
-    lucro_alvo_reais = 0.0
-    margem_alvo_percentual = 0.0
-
-    # LÓGICA CONDICIONAL
-    if estrategia == "Margem % sobre Venda":
-        margem_alvo_percentual = st.number_input("Margem Líquida Desejada (%)", value=20.0, step=1.0, format="%.1f")
-        st.caption(f"O sistema buscará um preço onde sobrem {margem_alvo_percentual}% limpos.")
-        
-    else: # Estratégia ERP
-        c_erp1, c_erp2 = st.columns(2)
-        with c_erp1:
-            # CORREÇÃO AQUI: Adicionado step=0.01
-            preco_erp = st.number_input("Preço de Venda no ERP (R$)", value=85.44, step=0.01, format="%.2f")
-        with c_erp2:
-            margem_erp = st.number_input("Margem no ERP (%)", value=20.0, step=1.0, format="%.1f")
-        
-        # Cálculo do Lucro em Reais que você quer "proteger"
-        lucro_alvo_reais = preco_erp * (margem_erp / 100)
-        
-        st.success(f"💰 Lucro Alvo a Garantir: **R$ {lucro_alvo_reais:.2f}**")
-        st.caption("O preço sugerido cobrirá custos + taxas + este valor exato em reais.")
-
-    # --- CÁLCULO DO PREÇO SUGERIDO (ENGENHARIA REVERSA) ---
-    custos_totais_absolutos = cmv + frete_anuncio + custo_fixo_transacao + custo_extra
-    
-    if estrategia == "Margem % sobre Venda":
-        # Fórmula: Preço = Custos / (1 - (Taxas + Margem))
-        divisor = 1 - ((taxa_ml + imposto_padrao + margem_alvo_percentual) / 100)
-        if divisor > 0.0001: # Evitar divisão por zero
-            preco_sugerido = custos_totais_absolutos / divisor
-        else:
-            preco_sugerido = 0.0
-            st.error("Margem + Taxas ultrapassam 100%.")
-            
-    else: # Estratégia ERP
-        # Fórmula: Preço = (Custos + Lucro em Reais) / (1 - Taxas)
-        numerador = custos_totais_absolutos + lucro_alvo_reais
-        divisor = 1 - ((taxa_ml + imposto_padrao) / 100)
-        
-        if divisor > 0.0001: # Evitar divisão por zero
-            preco_sugerido = numerador / divisor
-        else:
-            preco_sugerido = 0.0
-            st.error("Taxas ultrapassam 100%.")
-
-    # --- SIMULADOR MANUAL PARA COMPARAÇÃO ---
-    st.markdown("---")
-    st.write("#### 🔎 Simulador de Resultado")
-    
-    # CORREÇÃO AQUI: Adicionado step=0.01
-    valor_inicial_simulador = float(preco_sugerido) if preco_sugerido > 0 else 100.00
-    preco_venda_manual = st.number_input("Preço de Venda Final (R$)", value=valor_inicial_simulador, step=0.01, format="%.2f")
-
-    # DRE DO SIMULADOR
-    v_comissao = preco_venda_manual * (taxa_ml / 100)
-    v_imposto = preco_venda_manual * (imposto_padrao / 100)
-    custo_total_venda = cmv + frete_anuncio + custo_extra + v_comissao + v_imposto + custo_fixo_transacao
-    lucro_liquido_final = preco_venda_manual - custo_total_venda
-    margem_final = (lucro_liquido_final / preco_venda_manual * 100) if preco_venda_manual > 0 else 0.0
-
-    # EXIBIÇÃO RESULTADOS
-    c1, c2, c3 = st.columns(3)
-    c1.metric("Preço Sugerido", f"R$ {preco_sugerido:.2f}")
-    c2.metric("Lucro Líquido Real", f"R$ {lucro_liquido_final:.2f}")
-    
-    # Feedback visual se bateu a meta
-    if estrategia == "Manter Lucro em Reais (ERP)":
-        if lucro_liquido_final >= (lucro_alvo_reais - 0.05): # Tolerância de centavos
-            c3.metric("Status", "Meta Atingida ✅", f"Dif: R$ {lucro_liquido_final - lucro_alvo_reais:.2f}")
-        else:
-            c3.metric("Status", "Abaixo da Meta 🔻", f"Falta: R$ {lucro_alvo_reais - lucro_liquido_final:.2f}", delta_color="inverse")
-    else:
-        c3.metric("Margem Real", f"{margem_final:.1f}%")
-
-    # DRE VISUAL
-    with st.expander("Ver Detalhes dos Cálculos (DRE)", expanded=True):
-        st.write(f"""
-        | Descrição | Valor |
-        | :--- | ---: |
-        | **(+) Preço de Venda** | **R$ {preco_venda_manual:.2f}** |
-        | (-) Impostos ({imposto_padrao}%) | R$ {v_imposto:.2f} |
-        | (-) Comissão ML ({taxa_ml}%) | R$ {v_comissao:.2f} |
-        | (-) Frete | R$ {frete_anuncio:.2f} |
-        | (-) Custo Produto | R$ {cmv:.2f} |
-        | **(=) Lucro Líquido** | **R$ {lucro_liquido_final:.2f}** |
-        """)
+    # Botão para limpar lista
+    if st.button("Limpar Lista"):
+        st.session_state.lista_produtos = []
+        st.experimental_rerun()
+else:
+    st.info("Sua lista está vazia. Adicione produtos acima.")
