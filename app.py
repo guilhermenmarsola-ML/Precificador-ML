@@ -3,64 +3,54 @@ import pandas as pd
 import time
 
 # --- CONFIGURAÇÃO INICIAL ---
-st.set_page_config(page_title="Precificador ML - V16 Stable", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Precificador ML - V17 Final", layout="wide", page_icon="⚡")
 
-# --- GERENCIAMENTO DE ESTADO ---
+# --- FUNÇÃO DE REINÍCIO ---
+def reiniciar_app():
+    time.sleep(0.1)
+    try:
+        st.rerun()
+    except AttributeError:
+        st.experimental_rerun()
+
+# --- INICIALIZAÇÃO DE ESTADO ---
 if 'lista_produtos' not in st.session_state:
     st.session_state.lista_produtos = []
 
-# Inicializa as chaves dos inputs se não existirem
-def init_state(key, value):
+# Função para inicializar variáveis de input se não existirem
+def init_var(key, default_value):
     if key not in st.session_state:
-        st.session_state[key] = value
+        st.session_state[key] = default_value
 
-init_state('n_mlb', 'MLB-')
-init_state('n_nome', '')
-init_state('n_cmv', 32.57)
-init_state('n_extra', 0.00)
-# Mantemos taxas e ERP persistentes para agilizar digitação em lote
+# Inicializa as variáveis dos campos (Inputs)
+init_var('n_mlb', 'MLB-')
+init_var('n_nome', '')
+init_var('n_cmv', 32.57)
+init_var('n_frete', 18.86)
+init_var('n_extra', 0.00)
+# Taxas e Metas mantêm o estado (não limpamos a cada produto)
+init_var('n_taxa', 16.5)
+init_var('n_erp', 85.44)
+init_var('n_merp', 20.0)
 
-# --- FUNÇÃO DE LIMPEZA (CALLBACK) ---
-# Esta função roda APENAS quando clica no botão adicionar
-def limpar_campos_produto():
-    st.session_state.n_mlb = "MLB-"
-    st.session_state.n_nome = ""
-    st.session_state.n_cmv = 0.00 # Zera o custo para o próximo
-    st.session_state.n_extra = 0.00
-    # Nota: Não zeramos taxas/margens pois geralmente são repetitivas
-
-# --- CSS PROFISSIONAL ---
+# --- CSS E ESTILO ---
 st.markdown("""
 <style>
-    /* Ajuste de Inputs */
-    div[data-testid="stNumberInput"] label { font-size: 13px; color: #555; }
+    div[data-testid="stNumberInput"] label { font-size: 13px; color: #444; }
+    .lucro-pos { color: #28a745; font-weight: bold; }
+    .lucro-neg { color: #dc3545; font-weight: bold; }
     
-    /* Painel de Sugestão (Caixa Azul) */
-    .suggestion-box {
-        background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
-        padding: 20px;
-        border-radius: 12px;
-        border: 1px solid #90caf9;
-        color: #0d47a1;
+    /* Caixa de Sugestão Estilizada */
+    .suggestion-container {
+        background-color: #f0f7ff;
+        border: 1px solid #cce5ff;
+        border-radius: 10px;
+        padding: 15px;
         text-align: center;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        margin-bottom: 15px;
     }
-    .sug-title { font-size: 14px; font-weight: bold; text-transform: uppercase; letter-spacing: 1px; color: #1565c0; }
-    .sug-value { font-size: 28px; font-weight: 800; color: #0d47a1; margin: 5px 0; }
-    .sug-sub { font-size: 13px; color: #1e88e5; }
-    
-    /* Cores de Resultado */
-    .text-success { color: #28a745 !important; font-weight: bold; }
-    .text-danger { color: #dc3545 !important; font-weight: bold; }
-    
-    /* Botões */
-    div.stButton > button[kind="primary"] {
-        background-color: #2962ff;
-        border: none;
-        height: 50px;
-        font-size: 16px;
-    }
+    .sug-label { font-size: 12px; color: #004085; font-weight: bold; letter-spacing: 1px; }
+    .sug-val { font-size: 26px; color: #0056b3; font-weight: 800; margin: 5px 0; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -92,7 +82,6 @@ def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, i
     preco_est_1 = (custos_fixos_1 + lucro_alvo_reais) / divisor
     if preco_est_1 >= 79.00: return preco_est_1, "Frete Manual"
     
-    # Loop de verificação de faixas
     for taxa, nome, p_min, p_max in [
         (taxa_50_79, "Tab. 50-79", 50, 79),
         (taxa_29_50, "Tab. 29-50", 29, 50),
@@ -108,95 +97,113 @@ def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, i
 st.title("⚡ Precificador ML Pro")
 
 # ==============================================================================
-# ÁREA 1: FORMULÁRIO DE CADASTRO
+# ÁREA 1: CADASTRO DO PRODUTO
 # ==============================================================================
 with st.container(border=True):
     st.subheader("1. Dados do Produto")
     
     c1, c2, c3, c4 = st.columns([1, 2, 1, 1])
+    # Os inputs estão ligados ao session_state pelas chaves (key)
     codigo_mlb_input = c1.text_input("SKU / MLB", key="n_mlb")
     nome_produto_input = c2.text_input("Nome do Produto", key="n_nome")
     cmv_input = c3.number_input("Custo (CMV)", step=0.01, format="%.2f", key="n_cmv")
-    frete_anuncio_input = c4.number_input("Frete Cheio (>79)", value=18.86, step=0.01, format="%.2f", key="n_frete")
+    frete_anuncio_input = c4.number_input("Frete Cheio (>79)", step=0.01, format="%.2f", key="n_frete")
 
     st.divider() 
     
     c5, c6, c7, c8 = st.columns([1, 1, 1, 1])
-    taxa_ml_input = c5.number_input("Comissão ML (%)", value=16.5, step=0.5, format="%.1f", key="n_taxa")
+    taxa_ml_input = c5.number_input("Comissão ML (%)", step=0.5, format="%.1f", key="n_taxa")
     custo_extra_input = c6.number_input("Extras (R$)", step=0.01, format="%.2f", key="n_extra")
-    preco_erp_input = c7.number_input("Preço ERP (R$)", value=85.44, step=0.01, format="%.2f", key="n_erp")
-    margem_erp_input = c8.number_input("Margem ERP (%)", value=20.0, step=1.0, format="%.1f", key="n_merp")
+    preco_erp_input = c7.number_input("Preço ERP (R$)", step=0.01, format="%.2f", key="n_erp")
+    margem_erp_input = c8.number_input("Margem ERP (%)", step=1.0, format="%.1f", key="n_merp")
 
 # ==============================================================================
-# ÁREA 2: SUGESTÃO INTELIGENTE (CAIXA AZUL NOVA)
+# ÁREA 2: SUGESTÃO E ADIÇÃO
 # ==============================================================================
+# Cálculo da Sugestão
 lucro_alvo_input = preco_erp_input * (margem_erp_input / 100)
 preco_sug, nome_frete_sug = calcular_preco_sugerido_reverso(
     cmv_input + custo_extra_input, lucro_alvo_input, taxa_ml_input, imposto_padrao, frete_anuncio_input
 )
 
-# HTML Personalizado para a Caixa Azul (Visual Limpo)
-st.markdown(f"""
-<div class="suggestion-box">
-    <div style="display: flex; justify-content: space-around; align-items: center;">
-        <div>
-            <div class="sug-title">META DE LUCRO (ERP)</div>
-            <div class="sug-value">R$ {lucro_alvo_input:.2f}</div>
-            <div class="sug-sub">{margem_erp_input}% sobre R$ {preco_erp_input}</div>
-        </div>
-        <div style="font-size: 30px; color: #90caf9;">➔</div>
-        <div>
-            <div class="sug-title">PREÇO SUGERIDO ML</div>
-            <div class="sug-value">R$ {preco_sug:.2f}</div>
-            <div class="sug-sub">Considerando {nome_frete_sug}</div>
+col_painel, col_botao = st.columns([2, 1])
+
+with col_painel:
+    # Painel Visual de Sugestão (Nativo + HTML seguro)
+    st.markdown(f"""
+    <div class="suggestion-container">
+        <div style="display: flex; justify-content: space-around; align-items: center;">
+            <div>
+                <div class="sug-label">META LUCRO (ERP)</div>
+                <div class="sug-val">R$ {lucro_alvo_input:.2f}</div>
+            </div>
+            <div style="font-size: 24px; color: #90caf9;">➜</div>
+            <div>
+                <div class="sug-label">PREÇO SUGERIDO</div>
+                <div class="sug-val">R$ {preco_sug:.2f}</div>
+                <div style="font-size: 11px; color: #666;">({nome_frete_sug})</div>
+            </div>
         </div>
     </div>
-</div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-# BOTÃO ADICIONAR (COM CALLBACK DE LIMPEZA)
-# O argumento 'on_click' chama a função de limpeza antes de recarregar
-if st.button("⬇️ ADICIONAR PRODUTO À LISTA", type="primary", use_container_width=True, on_click=limpar_campos_produto):
-    if nome_produto_input:
-        novo_id = int(time.time() * 1000)
-        novo_item = {
-            "id": novo_id,
-            "MLB": codigo_mlb_input,
-            "Produto": nome_produto_input,
-            "CMV": cmv_input,
-            "FreteManual": frete_anuncio_input,
-            "TaxaML": taxa_ml_input,
-            "Extra": custo_extra_input,
-            "PrecoERP": preco_erp_input,
-            "MargemERP": margem_erp_input,
-            "PrecoBase": preco_sug, 
-            "DescontoPct": 0.0,
-            "Bonus": 0.0,
-        }
-        st.session_state.lista_produtos.append(novo_item)
-        st.toast(f"Produto {nome_produto_input} salvo!", icon="✅")
-    else:
-        st.error("Por favor, digite o Nome do Produto.")
+with col_botao:
+    st.write("") # Espaçamento para alinhar verticalmente
+    st.write("") 
+    
+    # --- LÓGICA DO BOTÃO ADICIONAR (CORRIGIDA) ---
+    if st.button("⬇️ ADICIONAR À LISTA", type="primary", use_container_width=True):
+        if nome_produto_input:
+            # 1. SALVAR O PRODUTO NA LISTA
+            novo_id = int(time.time() * 1000)
+            novo_item = {
+                "id": novo_id,
+                "MLB": codigo_mlb_input,
+                "Produto": nome_produto_input,
+                "CMV": cmv_input,
+                "FreteManual": frete_anuncio_input,
+                "TaxaML": taxa_ml_input,
+                "Extra": custo_extra_input,
+                "PrecoERP": preco_erp_input,
+                "MargemERP": margem_erp_input,
+                "PrecoBase": preco_sug, 
+                "DescontoPct": 0.0,
+                "Bonus": 0.0,
+            }
+            st.session_state.lista_produtos.append(novo_item)
+            st.success("Adicionado com sucesso!")
+            
+            # 2. LIMPAR OS CAMPOS PARA O PRÓXIMO (Atualiza o session_state)
+            st.session_state.n_mlb = "MLB-"
+            st.session_state.n_nome = ""
+            st.session_state.n_cmv = 0.00
+            st.session_state.n_extra = 0.00
+            # Obs: Mantemos n_erp, n_merp, n_taxa pois geralmente repetem
+            
+            # 3. RECARREGAR A PÁGINA
+            reiniciar_app()
+        else:
+            st.error("Preencha o Nome do Produto.")
 
 # ==============================================================================
 # ÁREA 3: LISTA DE GESTÃO
 # ==============================================================================
-st.markdown("### 📋 Gerenciamento de Preços")
+st.markdown("### 📋 Produtos Precificados")
 
 if st.session_state.lista_produtos:
     
+    # Cabeçalho da Tabela
     cols = st.columns([1, 3, 2, 1])
     cols[0].caption("CÓDIGO")
     cols[1].caption("PRODUTO")
     cols[2].caption("LUCRO / MARGEM")
     cols[3].caption("AÇÕES")
     
-    # Loop reverso
     for i, item in enumerate(reversed(st.session_state.lista_produtos)):
         
         with st.container(border=True):
             
-            # --- CÁLCULOS ---
+            # Recálculos Vivos
             preco_base_calc = item['PrecoBase']
             desc_calc = item['DescontoPct']
             preco_final_calc = preco_base_calc * (1 - (desc_calc / 100))
@@ -210,48 +217,46 @@ if st.session_state.lista_produtos:
             lucro_final = preco_final_calc - custos_totais + item['Bonus']
             margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
             
-            # --- DISPLAY LINHA ---
+            # Linha Principal
             c1, c2, c3, c4 = st.columns([1, 3, 2, 1])
             c1.write(f"**{item['MLB']}**")
             c2.write(item['Produto'])
             
-            cor_css = "text-success" if lucro_final > 0 else "text-danger"
-            c3.markdown(f"<span class='{cor_css}'>R$ {lucro_final:.2f}</span> ({margem_final:.1f}%)", unsafe_allow_html=True)
+            cor_txt = ":green" if lucro_final > 0 else ":red"
+            c3.markdown(f"{cor_txt}[**R$ {lucro_final:.2f}**] ({margem_final:.1f}%)")
                 
             if c4.button("🗑️", key=f"del_{item['id']}"):
                 st.session_state.lista_produtos.remove(item)
-                st.rerun()
+                reiniciar_app()
 
-            # --- EXPANDER ---
-            with st.expander(f"✏️ Detalhes e Ajustes - {item['Produto']}"):
+            # Detalhes e Edição
+            with st.expander(f"✏️ Editar / DRE - {item['Produto']}"):
                 
+                st.caption("AJUSTES DE VENDA")
                 ec1, ec2, ec3 = st.columns(3)
                 
-                # Campos de Edição com Auto-Save
                 novo_preco = ec1.number_input("Preço Tabela (DE)", value=float(item['PrecoBase']), step=0.5, key=f"pb_{item['id']}")
                 novo_desc = ec2.number_input("Desconto (%)", value=float(item['DescontoPct']), step=0.5, key=f"dc_{item['id']}")
-                novo_bonus = ec3.number_input("Bônus ML (R$)", value=float(item['Bonus']), step=0.01, key=f"bn_{item['id']}")
+                novo_bonus = ec3.number_input("Rebate / Bônus (R$)", value=float(item['Bonus']), step=0.01, key=f"bn_{item['id']}")
                 
-                # Lógica de Atualização
                 if (novo_preco != item['PrecoBase'] or novo_desc != item['DescontoPct'] or novo_bonus != item['Bonus']):
                     item['PrecoBase'] = novo_preco
                     item['DescontoPct'] = novo_desc
                     item['Bonus'] = novo_bonus
-                    st.rerun()
+                    reiniciar_app()
 
                 st.divider()
                 
-                # --- DRE NATIVA ---
+                # DRE Visual
                 st.caption("DEMONSTRATIVO FINANCEIRO")
-                
-                r1, r2 = st.columns([3, 1])
-                r1.write("(+) Preço Tabela")
-                r2.write(f"R$ {preco_base_calc:.2f}")
+                d1, d2 = st.columns([3, 1])
+                d1.write("(+) Preço Tabela")
+                d2.write(f"R$ {preco_base_calc:.2f}")
                 
                 if desc_calc > 0:
-                    r1, r2 = st.columns([3, 1])
-                    r1.markdown(f":red[(-) Desconto ({desc_calc}%) ]")
-                    r2.markdown(f":red[- R$ {preco_base_calc - preco_final_calc:.2f}]")
+                    d1, d2 = st.columns([3, 1])
+                    d1.markdown(f":red[(-) Desconto ({desc_calc}%) ]")
+                    d2.markdown(f":red[- R$ {preco_base_calc - preco_final_calc:.2f}]")
                 
                 st.markdown("---") 
                 r1, r2 = st.columns([3, 1])
@@ -283,7 +288,7 @@ if st.session_state.lista_produtos:
                 cor_res = ":green" if lucro_final > 0 else ":red"
                 rf2.markdown(f"#### {cor_res}[R$ {lucro_final:.2f}]")
 
-    # Footer Download
+    # Download
     st.markdown("---")
     col_csv, col_clr = st.columns([1, 1])
     
@@ -307,7 +312,7 @@ if st.session_state.lista_produtos:
     col_csv.download_button("📥 Baixar Excel Completo", csv, "precificacao_ml.csv", "text/csv")
     if col_clr.button("🗑️ Limpar Lista"):
         st.session_state.lista_produtos = []
-        st.rerun()
+        reiniciar_app()
 
 else:
     st.info("Lista vazia. Adicione produtos acima.")
