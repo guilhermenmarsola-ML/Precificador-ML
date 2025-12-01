@@ -3,67 +3,48 @@ import pandas as pd
 import time
 
 # --- CONFIGURAÇÃO INICIAL ---
-st.set_page_config(page_title="Gerenciador ML - V11 (Gestão Total)", layout="wide", page_icon="⚡")
+st.set_page_config(page_title="Precificador ML - V12 (Live Editor)", layout="wide", page_icon="⚡")
 
-# Função de Reinício Universal
+# Função Universal de Reinício
 def reiniciar_app():
     try:
         st.rerun()
     except AttributeError:
         st.experimental_rerun()
 
-# Inicialização de Estado (Memória)
 if 'lista_produtos' not in st.session_state:
     st.session_state.lista_produtos = []
-
-# --- FUNÇÃO PARA CARREGAR DADOS NO FORMULÁRIO (EDITAR) ---
-def carregar_para_edicao(item):
-    # Joga os valores do item para as chaves dos widgets
-    st.session_state['w_mlb'] = item['MLB']
-    st.session_state['w_nome'] = item['Produto']
-    st.session_state['w_cmv'] = item['CMV']
-    st.session_state['w_frete_anuncio'] = 18.86 # Valor padrão ou recuperar se tivesse salvo o manual específico
-    st.session_state['w_taxa_ml'] = item['ComissaoPct']
-    st.session_state['w_extra'] = item['Extra']
-    st.session_state['w_preco_base'] = item['PrecoBase']
-    st.session_state['w_desc'] = item['DescontoPct']
-    st.session_state['w_bonus'] = item['Bonus']
-    
-    # Remove o item antigo da lista para não duplicar
-    st.session_state.lista_produtos.remove(item)
-    st.toast(f"Editando: {item['Produto']}. Dados carregados no topo!", icon="✏️")
-
-# --- FUNÇÃO PARA REMOVER ---
-def remover_item(item):
-    st.session_state.lista_produtos.remove(item)
-    st.toast("Item removido com sucesso!", icon="🗑️")
 
 # --- CSS PROFISSIONAL ---
 st.markdown("""
 <style>
     .main { background-color: #f8f9fa; }
-    h1, h2, h3 { font-family: 'Segoe UI', sans-serif; color: #2c3e50; }
     
-    .custom-card {
+    /* Card do Produto na Lista */
+    .product-card {
         background-color: white;
-        padding: 20px;
-        border-radius: 12px;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        border: 1px solid #e9ecef;
-        margin-bottom: 20px;
-    }
-    
-    /* Botão Principal */
-    div.stButton > button:first-child {
-        font-weight: bold;
+        border: 1px solid #e0e0e0;
         border-radius: 8px;
+        padding: 10px 15px;
+        border-left: 5px solid #ccc;
+        margin-bottom: 10px;
+    }
+    .status-ok { border-left-color: #28a745 !important; }
+    .status-bad { border-left-color: #dc3545 !important; }
+    
+    /* DRE Box */
+    .dre-box {
+        background-color: #f8f9fa;
+        padding: 15px;
+        border-radius: 5px;
+        font-family: monospace;
+        font-size: 14px;
+        margin-top: 10px;
     }
     
-    /* Estilo específico para botões de ação na lista (pequenos) */
-    div[data-testid="column"] button {
-        padding: 0px 10px;
+    /* Inputs Compactos na Lista */
+    div[data-testid="stNumberInput"] label {
         font-size: 12px;
-        min-height: 35px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -80,7 +61,7 @@ with st.sidebar:
         taxa_50_79 = st.number_input("R$ 50,00 - 79,00", value=6.75)
         taxa_minima = st.number_input("Abaixo de R$ 12,50", value=3.25)
 
-# --- FUNÇÕES LÓGICAS ---
+# --- LÓGICA DE FRETE ---
 def identificar_faixa_frete(preco):
     if preco >= 79.00: return "manual", 0.0
     elif 50.00 <= preco < 79.00: return "Tab. 50-79", taxa_50_79
@@ -88,6 +69,7 @@ def identificar_faixa_frete(preco):
     elif 12.50 <= preco < 29.00: return "Tab. 12-29", taxa_12_29
     else: return "Tab. Mínima", taxa_minima
 
+# --- LÓGICA DE SUGESTÃO (REVERSA) ---
 def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, imposto_pct, frete_manual):
     custos_fixos_1 = custo_base + frete_manual
     divisor = 1 - ((taxa_ml_pct + imposto_pct) / 100)
@@ -96,194 +78,175 @@ def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, i
     preco_est_1 = (custos_fixos_1 + lucro_alvo_reais) / divisor
     if preco_est_1 >= 79.00: return preco_est_1, "Frete Manual (>79)"
     
-    custos_fixos_2 = custo_base + taxa_50_79
-    preco_est_2 = (custos_fixos_2 + lucro_alvo_reais) / divisor
-    if 50.00 <= preco_est_2 < 79.00: return preco_est_2, "Tab. 50-79"
-        
-    custos_fixos_3 = custo_base + taxa_29_50
-    preco_est_3 = (custos_fixos_3 + lucro_alvo_reais) / divisor
-    if 29.00 <= preco_est_3 < 50.00: return preco_est_3, "Tab. 29-50"
-        
-    custos_fixos_4 = custo_base + taxa_12_29
-    preco_est_4 = (custos_fixos_4 + lucro_alvo_reais) / divisor
-    if 12.50 <= preco_est_4 < 29.00: return preco_est_4, "Tab. 12-29"
+    # Tentativas nas faixas
+    for taxa, nome, p_min, p_max in [
+        (taxa_50_79, "Tab. 50-79", 50, 79),
+        (taxa_29_50, "Tab. 29-50", 29, 50),
+        (taxa_12_29, "Tab. 12-29", 12.5, 29)
+    ]:
+        custos = custo_base + taxa
+        preco = (custos + lucro_alvo_reais) / divisor
+        if p_min <= preco < p_max: return preco, nome
         
     return preco_est_1, "Frete Manual (Fallback)"
 
-st.title("⚡ Precificador Mercado Livre Pro")
+# --- CABEÇALHO ---
+st.title("⚡ Precificador ML Pro (Edição em Linha)")
 st.markdown("---")
 
-# --- BLOCO 1: DADOS E CUSTOS ---
-st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-st.subheader("1. Dados do Produto e Custos")
-c1, c2, c3, c4 = st.columns([1, 2, 1, 1])
+# ==============================================================================
+# ÁREA 1: CADASTRO DE NOVO ITEM
+# ==============================================================================
+with st.expander("📝 Cadastrar Novo Produto", expanded=True):
+    c1, c2, c3, c4 = st.columns([1, 2, 1, 1])
+    codigo_mlb_input = c1.text_input("SKU / MLB", "MLB-")
+    nome_produto_input = c2.text_input("Nome do Produto", "")
+    cmv_input = c3.number_input("Custo (CMV)", value=32.57, step=0.01, format="%.2f")
+    frete_anuncio_input = c4.number_input("Frete Cheio (>79)", value=18.86, step=0.01, format="%.2f")
 
-# USANDO KEYS PARA PERMITIR A EDICAO
-with c1: codigo_mlb = st.text_input("SKU / MLB", key="w_mlb")
-with c2: nome_produto = st.text_input("Nome do Produto", key="w_nome")
-with c3: cmv = st.number_input("Custo (CMV)", step=0.01, format="%.2f", key="w_cmv")
-with c4: frete_anuncio = st.number_input("Frete Cheio (>79)", value=18.86, step=0.01, format="%.2f", key="w_frete_anuncio")
+    c5, c6, c7, c8 = st.columns([1, 1, 1, 1])
+    taxa_ml_input = c5.number_input("Comissão ML (%)", value=16.5, step=0.5, format="%.1f")
+    custo_extra_input = c6.number_input("Extras (R$)", value=0.00, step=0.01, format="%.2f")
+    preco_erp_input = c7.number_input("Preço ERP (R$)", value=85.44, step=0.01, format="%.2f")
+    margem_erp_input = c8.number_input("Margem ERP (%)", value=20.0, step=1.0, format="%.1f")
 
-c_taxa, c_extra = st.columns(2)
-with c_taxa: taxa_ml = st.number_input("Comissão ML (%)", value=16.5, step=0.5, format="%.1f", key="w_taxa_ml")
-with c_extra: custo_extra = st.number_input("Embalagem / Extra (R$)", step=0.01, format="%.2f", key="w_extra")
-st.markdown('</div>', unsafe_allow_html=True)
-
-# --- BLOCO 2: ESTRATÉGIA ---
-st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-st.subheader("2. Definição de Meta (ERP)")
-col_meta, col_sugestao = st.columns([1, 1])
-
-with col_meta:
-    mc1, mc2 = st.columns(2)
-    preco_erp = mc1.number_input("Preço ERP (R$)", value=85.44, step=0.01, format="%.2f", key="w_preco_erp")
-    margem_erp = mc2.number_input("Margem ERP (%)", value=20.0, step=1.0, format="%.1f", key="w_margem_erp")
-    lucro_alvo = preco_erp * (margem_erp / 100)
-    st.markdown(f"🎯 Meta de Lucro: :green[**R$ {lucro_alvo:.2f}**]")
-
-with col_sugestao:
-    preco_ideal, nome_frete_ideal = calcular_preco_sugerido_reverso(
-        custo_base=(cmv + custo_extra),
-        lucro_alvo_reais=lucro_alvo,
-        taxa_ml_pct=taxa_ml,
-        imposto_pct=imposto_padrao,
-        frete_manual=frete_anuncio
+    # Botão de Cálculo Prévio
+    lucro_alvo_input = preco_erp_input * (margem_erp_input / 100)
+    preco_sug, nome_frete_sug = calcular_preco_sugerido_reverso(
+        cmv_input + custo_extra_input, lucro_alvo_input, taxa_ml_input, imposto_padrao, frete_anuncio_input
     )
-    st.info(f"💡 **Preço Sugerido:**\n# **R$ {preco_ideal:.2f}**\n*({nome_frete_ideal})*")
-st.markdown('</div>', unsafe_allow_html=True)
-
-# --- BLOCO 3: AJUSTE FINO ---
-st.markdown('<div class="custom-card" style="background-color: #f0f8ff; border: 1px solid #b3d7ff;">', unsafe_allow_html=True)
-st.subheader("3. Decisão Final e Promoções")
-col_decisao, col_promo = st.columns([1, 1.5])
-
-with col_decisao:
-    # Se não tiver valor na sessão (primeira vez), usa o ideal
-    if 'w_preco_base' not in st.session_state:
-        st.session_state['w_preco_base'] = float(round(preco_ideal, 2))
-        
-    preco_base_decisao = st.number_input("Preço de Tabela (DE:)", step=0.01, format="%.2f", key="w_preco_base")
-
-with col_promo:
-    pc1, pc2 = st.columns(2)
-    desconto_pct = pc1.number_input("Desconto (%)", step=0.5, format="%.1f", key="w_desc")
-    bonus_ml = pc2.number_input("Rebate / Bônus (R$)", step=0.01, format="%.2f", key="w_bonus")
     
-    preco_final = preco_base_decisao * (1 - (desconto_pct / 100))
-    st.markdown(f"🛒 Preço Final de Venda (POR): **R$ {preco_final:.2f}**")
-st.markdown('</div>', unsafe_allow_html=True)
+    st.info(f"💡 Sugestão para Meta: **R$ {preco_sug:.2f}** ({nome_frete_sug})")
+    
+    if st.button("⬇️ ADICIONAR À LISTA", type="primary"):
+        if nome_produto_input:
+            novo_id = int(time.time() * 1000)
+            novo_item = {
+                "id": novo_id,
+                "MLB": codigo_mlb_input,
+                "Produto": nome_produto_input,
+                "CMV": cmv_input,
+                "FreteManual": frete_anuncio_input,
+                "TaxaML": taxa_ml_input,
+                "Extra": custo_extra_input,
+                "PrecoERP": preco_erp_input,
+                "MargemERP": margem_erp_input,
+                
+                # Valores Iniciais de Venda
+                "PrecoBase": preco_sug, # Começa com o sugerido
+                "DescontoPct": 0.0,
+                "Bonus": 0.0,
+            }
+            st.session_state.lista_produtos.append(novo_item)
+            st.success("Adicionado! Edite os detalhes abaixo.")
+            time.sleep(0.5)
+            reiniciar_app()
+        else:
+            st.error("Nome obrigatório")
 
-# --- CÁLCULO FINAL ---
-nome_frete_real, valor_frete_real = identificar_faixa_frete(preco_final)
-if nome_frete_real == "manual": valor_frete_real = frete_anuncio
-
-imposto_val = preco_final * (imposto_padrao / 100)
-comissao_val = preco_final * (taxa_ml / 100)
-custos_totais = cmv + custo_extra + valor_frete_real + imposto_val + comissao_val
-lucro_final = preco_final - custos_totais + bonus_ml
-margem_final = (lucro_final / preco_final * 100) if preco_final > 0 else 0
-
-st.subheader("📊 Resultado da Simulação")
-k1, k2, k3, k4 = st.columns(4)
-k1.metric("Frete Aplicado", f"R$ {valor_frete_real:.2f}", nome_frete_real)
-k2.metric("Comissão + Imposto", f"R$ {(comissao_val + imposto_val):.2f}")
-k3.metric("Bônus", f"R$ {bonus_ml:.2f}")
-k4.metric("Lucro Líquido", f"R$ {lucro_final:.2f}", f"Dif Meta: R$ {lucro_final - lucro_alvo:.2f}")
-
-# --- BOTÃO ADICIONAR ---
+# ==============================================================================
+# ÁREA 2: LISTA DE PRODUTOS (COM EDIÇÃO VIVA)
+# ==============================================================================
 st.markdown("---")
-col_add, _ = st.columns([1, 2])
-if col_add.button("➕ ADICIONAR / ATUALIZAR LISTA"):
-    if nome_produto:
-        novo_id = int(time.time() * 1000)
-        novo_item = {
-            "id": novo_id,
-            "MLB": codigo_mlb,
-            "Produto": nome_produto,
-            "PrecoBase": preco_base_decisao,
-            "DescontoPct": desconto_pct,
-            "PrecoFinal": preco_final,
-            "ImpostoVal": imposto_val,
-            "ImpostoPct": imposto_padrao,
-            "ComissaoVal": comissao_val,
-            "ComissaoPct": taxa_ml,
-            "FreteVal": valor_frete_real,
-            "FreteNome": nome_frete_real,
-            "CMV": cmv,
-            "Extra": custo_extra,
-            "Bonus": bonus_ml,
-            "Lucro": lucro_final,
-            "Margem": margem_final
-        }
-        st.session_state.lista_produtos.append(novo_item)
-        st.success("Salvo com sucesso!")
-        time.sleep(0.5)
-        reiniciar_app() # Recarrega para limpar o form ou mostrar na lista
-    else:
-        st.error("Nome do produto é obrigatório.")
+st.subheader(f"📋 Gerenciamento ({len(st.session_state.lista_produtos)} itens)")
 
-# --- LISTA DE PRODUTOS ---
 if st.session_state.lista_produtos:
-    st.markdown("### 📋 Produtos Salvos")
     
-    # Cabeçalho Fixo
-    with st.container():
-        h1, h2, h3, h4, h5 = st.columns([1, 3, 2, 2, 1.5])
-        h1.caption("CÓDIGO")
-        h2.caption("PRODUTO")
-        h3.caption("PREÇO FINAL")
-        h4.caption("LUCRO")
-        h5.caption("AÇÕES")
-        st.divider()
+    # Cabeçalho da Lista
+    h1, h2, h3, h4 = st.columns([1, 3, 2, 1])
+    h1.caption("CÓDIGO")
+    h2.caption("PRODUTO (Clique na seta p/ Editar)")
+    h3.caption("RESULTADO FINAL")
+    h4.caption("AÇÃO")
+    st.divider()
 
-    # Iterar sobre a lista (Cópia invertida para mostrar recentes primeiro)
+    # Loop pelos itens
+    # Precisamos usar enumerate para gerar keys únicas para os inputs
     for i, item in enumerate(reversed(st.session_state.lista_produtos)):
         
-        c1, c2, c3, c4, c5 = st.columns([1, 3, 2, 2, 1.5])
+        # --- CÁLCULO EM TEMPO REAL (LIVE) ---
+        # 1. Recupera valores (Podem ter sido editados no input abaixo)
+        preco_base_calc = item['PrecoBase']
+        desc_calc = item['DescontoPct']
+        preco_final_calc = preco_base_calc * (1 - (desc_calc / 100))
         
+        # 2. Identifica Frete
+        nome_frete_real, valor_frete_real = identificar_faixa_frete(preco_final_calc)
+        if nome_frete_real == "manual": valor_frete_real = item['FreteManual']
+        
+        # 3. DRE
+        imposto_val = preco_final_calc * (imposto_padrao / 100)
+        comissao_val = preco_final_calc * (item['TaxaML'] / 100)
+        custos_totais = item['CMV'] + item['Extra'] + valor_frete_real + imposto_val + comissao_val
+        lucro_final = preco_final_calc - custos_totais + item['Bonus']
+        margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
+        
+        # Define cor da borda
+        css_class = "status-ok" if lucro_final > 0 else "status-bad"
+        
+        # --- RENDERIZAÇÃO DA LINHA ---
+        col_resumo = st.container()
+        
+        # Linha Resumo (Visível Sempre)
+        c1, c2, c3, c4 = col_resumo.columns([1, 3, 2, 1])
         c1.write(f"**{item['MLB']}**")
         c2.write(item['Produto'])
-        c3.write(f"R$ {item['PrecoFinal']:.2f}")
         
-        if item['Lucro'] > 0:
-            c4.markdown(f":green[**R$ {item['Lucro']:.2f}**] ({item['Margem']:.1f}%)")
-        else:
-            c4.markdown(f":red[**R$ {item['Lucro']:.2f}**] ({item['Margem']:.1f}%)")
-
-        # --- BOTÕES DE AÇÃO ---
-        btn_col1, btn_col2 = c5.columns(2)
+        cor_txt = ":green" if lucro_final > 0 else ":red"
+        c3.markdown(f"Venda: **R$ {preco_final_calc:.2f}** | Lucro: {cor_txt}[**R$ {lucro_final:.2f}**]")
         
-        # Botão EDITAR
-        if btn_col1.button("✏️", key=f"edit_{item['id']}", help="Editar este item"):
-            carregar_para_edicao(item)
+        if c4.button("🗑️", key=f"del_{item['id']}"):
+            st.session_state.lista_produtos.remove(item)
             reiniciar_app()
+
+        # --- ÁREA DE EDIÇÃO E DETALHES (EXPANDER) ---
+        with st.expander(f"✏️ Editar / Ver Detalhes - {item['Produto']}"):
             
-        # Botão EXCLUIR
-        if btn_col2.button("🗑️", key=f"del_{item['id']}", help="Excluir este item"):
-            remover_item(item)
-            reiniciar_app()
+            st.markdown("#### 🛠️ Editar Valores")
+            
+            # Inputs de Edição (Atualizam direto o dicionário na sessão)
+            ec1, ec2, ec3, ec4 = st.columns(4)
+            
+            # Aqui está a mágica: Os inputs atualizam o `item` direto
+            novo_preco_base = ec1.number_input("Preço Tabela (R$)", value=float(item['PrecoBase']), step=0.5, key=f"pbase_{item['id']}")
+            novo_desc = ec2.number_input("Desconto (%)", value=float(item['DescontoPct']), step=0.5, key=f"desc_{item['id']}")
+            novo_bonus = ec3.number_input("Rebate / Bônus (R$)", value=float(item['Bonus']), step=0.01, key=f"bonus_{item['id']}")
+            novo_cmv = ec4.number_input("CMV (Custo)", value=float(item['CMV']), step=0.5, key=f"cmv_{item['id']}")
+            
+            # Atualiza o estado se houver mudança
+            if (novo_preco_base != item['PrecoBase'] or 
+                novo_desc != item['DescontoPct'] or 
+                novo_bonus != item['Bonus'] or 
+                novo_cmv != item['CMV']):
+                
+                item['PrecoBase'] = novo_preco_base
+                item['DescontoPct'] = novo_desc
+                item['Bonus'] = novo_bonus
+                item['CMV'] = novo_cmv
+                st.rerun() # Recarrega para atualizar os cálculos acima
 
-        # DRE Expansível
-        with st.expander("📄 DRE Detalhada"):
+            st.divider()
+            
+            # --- DRE VISUAL (NATIVA) ---
+            st.markdown("#### 📄 DRE (Resultado Financeiro)")
+            
+            # Receita
             d1, d2 = st.columns([3, 1])
-            d1.markdown("Preço Tabela")
-            d2.markdown(f"R$ {item['PrecoBase']:.2f}")
+            d1.write(f"(+) Preço Tabela")
+            d2.write(f"R$ {preco_base_calc:.2f}")
             
-            if item['DescontoPct'] > 0:
+            if desc_calc > 0:
                 d1, d2 = st.columns([3, 1])
-                d1.markdown(f":red[(-) Desconto ({item['DescontoPct']}%) ]")
-                d2.markdown(f":red[- R$ {item['PrecoBase'] - item['PrecoFinal']:.2f}]")
+                d1.markdown(f":red[(-) Desconto ({desc_calc}%) ]")
+                d2.markdown(f":red[- R$ {preco_base_calc - preco_final_calc:.2f}]")
             
-            st.markdown("---")
-            d1, d2 = st.columns([3, 1])
-            d1.markdown("**(=) RECEITA BRUTA**")
-            d2.markdown(f"**R$ {item['PrecoFinal']:.2f}**")
-            st.markdown("---")
+            st.markdown("---") # Linha fina
             
+            # Custos
             custos_list = [
-                (f"Impostos ({item['ImpostoPct']}%)", item['ImpostoVal']),
-                (f"Comissão ML ({item['ComissaoPct']}%)", item['ComissaoVal']),
-                (f"Frete ({item['FreteNome']})", item['FreteVal']),
+                (f"Impostos ({imposto_padrao}%)", imposto_val),
+                (f"Comissão ML ({item['TaxaML']}%)", comissao_val),
+                (f"Frete ({nome_frete_real})", valor_frete_real),
                 ("Custo (CMV)", item['CMV']),
                 ("Extras", item['Extra'])
             ]
@@ -298,23 +261,47 @@ if st.session_state.lista_produtos:
                 d1.markdown(f":blue[(+) Bônus / Rebate]")
                 d2.markdown(f":blue[+ R$ {item['Bonus']:.2f}]")
 
-            st.divider()
-            d1, d2 = st.columns([3, 1])
-            d1.markdown("#### RESULTADO FINAL")
-            cor_final = ":green" if item['Lucro'] > 0 else ":red"
-            d2.markdown(f"#### {cor_final}[R$ {item['Lucro']:.2f}]")
+            st.divider() # Linha grossa
             
+            # Resultado Final do Item
+            rf1, rf2 = st.columns([3, 1])
+            rf1.markdown("### LUCRO LÍQUIDO")
+            cor_final = ":green" if lucro_final > 0 else ":red"
+            rf2.markdown(f"### {cor_final}[R$ {lucro_final:.2f}]")
+            rf2.caption(f"Margem: {margem_final:.1f}%")
+
         st.divider()
 
-    # Exportação
-    col_dw, col_clr = st.columns([1, 1])
-    df_exp = pd.DataFrame(st.session_state.lista_produtos)
-    csv = df_exp.to_csv(index=False).encode('utf-8')
-    col_dw.download_button("📥 Baixar Planilha Excel", csv, "precificacao.csv", "text/csv")
+    # Botões Finais
+    col_dl, col_cl = st.columns([1, 1])
     
-    if col_clr.button("🗑️ Limpar Tudo"):
+    # Gera DataFrame atualizado para Excel
+    # Precisamos recalcular o DF final baseado nos dados vivos
+    dados_export = []
+    for item in st.session_state.lista_produtos:
+        # Recalcula para garantir que o CSV saia com os dados editados
+        pb = item['PrecoBase']
+        pf = pb * (1 - item['DescontoPct']/100)
+        _, fr = identificar_faixa_frete(pf)
+        if _ == "manual": fr = item['FreteManual']
+        luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
+        
+        dados_export.append({
+            "MLB": item['MLB'],
+            "Produto": item['Produto'],
+            "Preco Final": pf,
+            "Lucro": luc,
+            "Margem": (luc/pf) if pf>0 else 0
+        })
+        
+    df_exp = pd.DataFrame(dados_export)
+    csv = df_exp.to_csv(index=False).encode('utf-8')
+    
+    col_dl.download_button("📥 Baixar Planilha Atualizada", csv, "precificacao_v12.csv", "text/csv")
+    
+    if col_cl.button("🗑️ Limpar Lista Completa"):
         st.session_state.lista_produtos = []
         reiniciar_app()
 
 else:
-    st.info("Lista vazia.")
+    st.info("Lista vazia. Cadastre o primeiro produto acima.")
