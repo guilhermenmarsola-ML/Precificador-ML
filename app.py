@@ -3,7 +3,7 @@ import pandas as pd
 import time
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - Final V27", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - V28 Semáforo", layout="centered", page_icon="💎")
 
 # --- 2. ESTADO (MEMORY) ---
 if 'lista_produtos' not in st.session_state:
@@ -13,7 +13,7 @@ def init_state(key, value):
     if key not in st.session_state:
         st.session_state[key] = value
 
-# Variáveis Temporárias (Cadastro)
+# Variáveis Temporárias
 init_state('n_mlb', '') 
 init_state('n_sku', '') 
 init_state('n_nome', '')
@@ -78,13 +78,21 @@ st.markdown("""
         margin: 5px 0;
     }
     
+    /* PILLS (TAGS DE LUCRO) - ATUALIZADO V28 */
     .pill {
         padding: 6px 12px;
         border-radius: 20px;
         font-size: 13px;
         font-weight: 700;
+        display: inline-block;
     }
+    /* Verde (> 15%) */
     .pill-green { background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5; }
+    
+    /* Amarelo (8% a 14.99%) */
+    .pill-yellow { background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D; }
+    
+    /* Vermelho (< 8%) */
     .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
 
     /* Inputs Limpos */
@@ -221,8 +229,7 @@ st.markdown('</div>', unsafe_allow_html=True)
 # --- FEED DE PRODUTOS ---
 if st.session_state.lista_produtos:
     
-    # CORREÇÃO CRÍTICA: Iterar pelos índices reais, em ordem reversa
-    # Isso garante que 'i' corresponda exatamente ao item na memória
+    # Loop Reverso (Usando índice correto para edição)
     total_itens = len(st.session_state.lista_produtos)
     
     for i in range(total_itens - 1, -1, -1):
@@ -242,10 +249,18 @@ if st.session_state.lista_produtos:
         lucro_final = preco_final_calc - custos_totais + item['Bonus']
         margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
         
-        pill_class = "pill-green" if lucro_final > 0 else "pill-red"
-        txt_lucro = f"+ R$ {lucro_final:.2f}" if lucro_final > 0 else f"- R$ {abs(lucro_final):.2f}"
+        # --- LÓGICA DE CORES (SEMÁFORO) V28 ---
+        txt_lucro = f"R$ {lucro_final:.2f}"
         
-        # --- CARD ---
+        if margem_final < 8.0:
+            pill_class = "pill-red" # Vermelho (< 8%)
+        elif 8.0 <= margem_final < 15.0:
+            pill_class = "pill-yellow" # Amarelo (8% a 14.9%)
+        else:
+            pill_class = "pill-green" # Verde (>= 15%)
+            txt_lucro = f"+ {txt_lucro}" # Adiciona sinal de mais só no verde
+
+        # --- CARD VISUAL ---
         sku_display = item.get('SKU', '-')
         
         st.markdown(f"""
@@ -268,7 +283,7 @@ if st.session_state.lista_produtos:
         with st.expander("⚙️ Editar e Detalhes"):
             st.caption("AJUSTES RÁPIDOS")
             
-            # Callback Específico para este item pelo índice 'i'
+            # Callbacks
             def update_item(idx=i, key_id=item['id'], field=None, key_st=None):
                 st.session_state.lista_produtos[idx][field] = st.session_state[key_st]
 
@@ -327,12 +342,16 @@ if st.session_state.lista_produtos:
             
             fr1, fr2 = st.columns([3, 1])
             fr1.markdown("#### RESULTADO LÍQUIDO")
-            cor = ":green" if lucro_final > 0 else ":red"
-            fr2.markdown(f"#### {cor}[R$ {lucro_final:.2f}]")
+            
+            # Cor do Resultado na DRE
+            if margem_final < 8.0: cor_res = ":red"
+            elif margem_final < 15.0: cor_res = ":orange"
+            else: cor_res = ":green"
+                
+            fr2.markdown(f"#### {cor_res}[R$ {lucro_final:.2f}]")
             
             st.write("")
             
-            # Função para deletar pelo índice correto
             def deletar(idx_del=i):
                 del st.session_state.lista_produtos[idx_del]
                 
