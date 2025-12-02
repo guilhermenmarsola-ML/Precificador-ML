@@ -1,9 +1,18 @@
 import streamlit as st
 import pandas as pd
 import time
+import re
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - Import Fix", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - Final V34", layout="centered", page_icon="💎")
+
+# --- FUNÇÃO DE REINÍCIO BLINDADA (CORREÇÃO DO ERRO) ---
+def reiniciar_app():
+    time.sleep(0.1)
+    if hasattr(st, 'rerun'):
+        st.rerun()
+    else:
+        st.experimental_rerun()
 
 # --- 2. ESTADO (MEMORY) ---
 if 'lista_produtos' not in st.session_state:
@@ -91,7 +100,19 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# --- 4. SIDEBAR ---
+# --- 4. FUNÇÕES DE LIMPEZA ---
+def limpar_valor_dinheiro(valor):
+    if pd.isna(valor) or valor == "": return 0.0
+    if isinstance(valor, (int, float)): return float(valor)
+    valor_str = str(valor).strip()
+    valor_str = re.sub(r'[^\d,\.-]', '', valor_str)
+    if not valor_str: return 0.0
+    if ',' in valor_str:
+        valor_str = valor_str.replace('.', '').replace(',', '.')
+    try: return float(valor_str)
+    except: return 0.0
+
+# --- 5. SIDEBAR ---
 with st.sidebar:
     st.header("Ajustes")
     imposto_padrao = st.number_input("Impostos (%)", value=27.0, step=0.5)
@@ -103,77 +124,72 @@ with st.sidebar:
         
     st.divider()
     
-    # --- ÁREA DE IMPORTAÇÃO (AJUSTADA) ---
+    # --- ÁREA DE IMPORTAÇÃO ---
     st.markdown("### 📂 Importar Planilha")
-    
     uploaded_file = st.file_uploader("Arraste seu Excel/CSV", type=['xlsx', 'csv'])
-    
-    # Seletor de Linha do Cabeçalho
-    header_row = st.number_input("Em qual linha começa o cabeçalho?", value=0, min_value=0, help="Se sua planilha tem títulos antes das colunas, aumente este número.")
+    header_row = st.number_input("Linha do Cabeçalho (0 = Primeira)", value=0, min_value=0)
     
     if uploaded_file is not None:
-        try:
-            # Ler arquivo com a linha de cabeçalho correta
-            if uploaded_file.name.endswith('.csv'):
-                df_upload = pd.read_csv(uploaded_file, header=header_row)
-            else:
-                df_upload = pd.read_excel(uploaded_file, header=header_row)
-            
-            st.caption("🔍 Prévia das colunas encontradas:")
-            st.write(list(df_upload.columns)[:5]) # Mostra as 5 primeiras colunas para conferência
-            
-            if st.button("Processar Importação", type="primary"):
+        if st.button("Processar Importação", type="primary"):
+            try:
+                if uploaded_file.name.endswith('.csv'):
+                    try: df_upload = pd.read_csv(uploaded_file, header=header_row, sep=';')
+                    except: uploaded_file.seek(0); df_upload = pd.read_csv(uploaded_file, header=header_row, sep=',')
+                else:
+                    df_upload = pd.read_excel(uploaded_file, header=header_row)
+                
+                df_upload.columns = [str(c).strip().lower() for c in df_upload.columns]
                 count = 0
+                
                 for index, row in df_upload.iterrows():
-                    # Normaliza nomes das colunas (remove espaços extras)
-                    row = row.rename(index=lambda x: x.strip() if isinstance(x, str) else x)
-                    
-                    # Busca flexível (Tenta vários nomes possíveis)
-                    mlb = str(row.get('Anúncio', row.get('MLB', row.get('Código', ''))))
-                    sku = str(row.get('SKU', row.get('Referencia', '')))
-                    produto = str(row.get('Nome do Produto', row.get('Produto', 'Item Importado')))
-                    
-                    def get_val(keys, default=0.0):
-                        for k in keys:
-                            if k in row:
-                                try: return float(row[k])
-                                except: pass
-                        return default
+                    try:
+                        def get_col(options, default_val=''):
+                            for opt in options:
+                                if opt.lower() in df_upload.columns: return row[opt.lower()]
+                            return default_val
 
-                    cmv = get_val(['CMV', 'Custo', 'Custo Produto'])
-                    preco_base = get_val(['Preço Usado', 'Preço', 'Preço Venda'])
-                    frete_manual = get_val(['Frete do anúncio', 'Frete', 'Frete Manual'], 18.86)
-                    taxa_ml_item = get_val(['TX ML', 'Taxa ML', 'Comissão'], 16.5)
-                    desc_pct = get_val(['% de Desconto', 'Desconto'], 0)
-                    bonus = get_val(['Bônus ML', 'Bonus', 'Rebate'], 0)
-                    
-                    # Se não tiver nome, pula
-                    if not produto or produto == 'nan': continue
+                        mlb = str(get_col(['Anúncio', 'MLB', 'Codigo', 'ID'], ''))
+                        sku = str(get_col(['SKU', 'Referencia', 'Ref'], ''))
+                        produto = str(get_col(['Nome do Produto', 'Produto', 'Titulo', 'Nome'], 'Produto Importado'))
+                        
+                        cmv = limpar_valor_dinheiro(get_col(['CMV', 'Custo', 'Custo Produto']))
+                        preco_base = limpar_valor_dinheiro(get_col(['Preço Usado', 'Preço', 'Preco', 'Preço Venda']))
+                        frete_manual = limpar_valor_dinheiro(get_col(['Frete do anúncio', 'Frete', 'Frete Manual']))
+                        if frete_manual == 0: frete_manual = 18.86
+                        
+                        taxa_ml_item = limpar_valor_dinheiro(get_col(['TX ML', 'Taxa ML', 'Comissão']))
+                        if taxa_ml_item == 0: taxa_ml_item = 16.5
+                        
+                        desc_pct = limpar_valor_dinheiro(get_col(['% de Desconto', 'Desconto', 'Desc %']))
+                        bonus = limpar_valor_dinheiro(get_col(['Bônus ML', 'Bonus', 'Rebate']))
+                        
+                        if produto == 'nan' or produto == '' or produto == 'Produto Importado': continue
 
-                    novo_item = {
-                        "id": int(time.time() * 1000) + index,
-                        "MLB": mlb,
-                        "SKU": sku,
-                        "Produto": produto,
-                        "CMV": cmv,
-                        "FreteManual": frete_manual if frete_manual > 0 else 18.86,
-                        "TaxaML": taxa_ml_item if taxa_ml_item > 0 else 16.5,
-                        "Extra": 0.0,
-                        "PrecoERP": 0.0,
-                        "MargemERP": 0.0,
-                        "PrecoBase": preco_base,
-                        "DescontoPct": desc_pct,
-                        "Bonus": bonus,
-                    }
-                    st.session_state.lista_produtos.append(novo_item)
-                    count += 1
+                        novo_item = {
+                            "id": int(time.time() * 1000) + index,
+                            "MLB": mlb if mlb != 'nan' else '',
+                            "SKU": sku if sku != 'nan' else '',
+                            "Produto": produto,
+                            "CMV": cmv,
+                            "FreteManual": frete_manual,
+                            "TaxaML": taxa_ml_item,
+                            "Extra": 0.0,
+                            "PrecoERP": 0.0,
+                            "MargemERP": 0.0,
+                            "PrecoBase": preco_base,
+                            "DescontoPct": desc_pct,
+                            "Bonus": bonus,
+                        }
+                        st.session_state.lista_produtos.append(novo_item)
+                        count += 1
+                    except: continue
                 
                 st.success(f"{count} produtos importados!")
                 time.sleep(1.5)
-                st.experimental_rerun()
+                reiniciar_app() # USANDO A FUNÇÃO BLINDADA
                 
-        except Exception as e:
-            st.error(f"Erro: {e}")
+            except Exception as e:
+                st.error(f"Erro: {e}")
 
 # --- 5. LÓGICA ---
 def identificar_faixa_frete(preco):
@@ -234,7 +250,6 @@ def adicionar_produto_action():
     st.session_state.lista_produtos.append(novo_item)
     st.toast("Salvo!", icon="✅")
 
-    # Limpeza
     st.session_state.n_mlb = ""
     st.session_state.n_sku = "" 
     st.session_state.n_nome = ""
@@ -273,7 +288,7 @@ st.write("")
 st.button("✨ Precificar e Adicionar", type="primary", use_container_width=True, on_click=adicionar_produto_action)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- FEED DE PRODUTOS ---
+# --- FEED ---
 if st.session_state.lista_produtos:
     
     total_itens = len(st.session_state.lista_produtos)
@@ -306,7 +321,6 @@ if st.session_state.lista_produtos:
             pill_class = "pill-green"
             box_style = "background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5;"
 
-        # Textos
         txt_pill = f"{margem_final:.1f}%"
         txt_lucro_reais = f"R$ {lucro_final:.2f}"
         if lucro_final > 0: txt_lucro_reais = "+ " + txt_lucro_reais
@@ -390,7 +404,7 @@ if st.session_state.lista_produtos:
             
             st.write("")
             
-            # BOX FINAL DO LUCRO
+            # --- CAIXA DE DESTAQUE DO RESULTADO ---
             st.markdown(f"""
             <div style="{box_style} padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
                 <span style="font-weight: 700; font-size: 14px;">LUCRO LÍQUIDO</span>
