@@ -3,7 +3,7 @@ import pandas as pd
 import time
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - V29 Final", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - V30 Invertida", layout="centered", page_icon="💎")
 
 # --- 2. ESTADO (MEMORY) ---
 if 'lista_produtos' not in st.session_state:
@@ -69,7 +69,11 @@ st.markdown("""
     .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
     
     .price-hero { 
-        font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0;
+        font-size: 32px; 
+        font-weight: 800; 
+        letter-spacing: -1px; 
+        color: #262626;
+        margin: 5px 0;
     }
     
     /* PILLS (TAGS) */
@@ -183,7 +187,7 @@ col_t, col_c = st.columns([3, 1])
 col_t.title("Precificador")
 col_c.caption(f"{len(st.session_state.lista_produtos)} itens")
 
-# --- INPUT CARD ---
+# --- CARD DE INPUT ---
 st.markdown('<div class="input-card">', unsafe_allow_html=True)
 
 st.text_input("MLB (ID do Anúncio)", key="n_mlb", placeholder="Ex: MLB-12345678")
@@ -207,7 +211,7 @@ st.write("")
 st.button("✨ Precificar e Adicionar", type="primary", use_container_width=True, on_click=adicionar_produto_action)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- FEED ---
+# --- FEED DE PRODUTOS ---
 if st.session_state.lista_produtos:
     
     total_itens = len(st.session_state.lista_produtos)
@@ -215,7 +219,7 @@ if st.session_state.lista_produtos:
     for i in range(total_itens - 1, -1, -1):
         item = st.session_state.lista_produtos[i]
         
-        # --- CÁLCULO VIVO ---
+        # --- CÁLCULO ---
         preco_base_calc = item['PrecoBase']
         desc_calc = item['DescontoPct']
         preco_final_calc = preco_base_calc * (1 - (desc_calc / 100))
@@ -229,20 +233,24 @@ if st.session_state.lista_produtos:
         lucro_final = preco_final_calc - custos_totais + item['Bonus']
         margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
         
-        # --- CORES (SEMÁFORO) ---
-        txt_lucro = f"R$ {lucro_final:.2f}"
-        sinal = "+" if lucro_final > 0 else "-"
-        txt_lucro = f"{sinal} R$ {abs(lucro_final):.2f}"
-        
+        # --- LÓGICA DE CORES ---
         if margem_final < 8.0:
             pill_class = "pill-red"
-            box_style = "background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2;" # Estilo do Box Final
+            box_style = "background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2;"
         elif 8.0 <= margem_final < 15.0:
             pill_class = "pill-yellow"
             box_style = "background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D;"
         else:
             pill_class = "pill-green"
             box_style = "background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5;"
+
+        # --- TEXTOS INVERTIDOS (PEDIDO ATUAL) ---
+        # No Topo (Pill): Margem em %
+        txt_pill = f"{margem_final:.1f}%"
+        
+        # No Corpo (Texto): Lucro em Reais
+        txt_lucro_reais = f"R$ {lucro_final:.2f}"
+        if lucro_final > 0: txt_lucro_reais = "+ " + txt_lucro_reais
 
         # --- CARD ---
         sku_display = item.get('SKU', '-')
@@ -254,12 +262,12 @@ if st.session_state.lista_produtos:
                     <div class="sku-text">{item['MLB']} • {sku_display}</div>
                     <div class="title-text">{item['Produto']}</div>
                 </div>
-                <div class="{pill_class} pill">{txt_lucro}</div>
+                <div class="{pill_class} pill">{txt_pill}</div>
             </div>
             <div class="card-body">
                 <div style="font-size: 11px; color:#888; font-weight:600;">PREÇO DE VENDA</div>
                 <div class="price-hero">R$ {preco_final_calc:.2f}</div>
-                <div style="font-size: 13px; color:#555;">Margem Líquida: <b>{margem_final:.1f}%</b></div>
+                <div style="font-size: 13px; color:#555;">Lucro Líquido: <b>{txt_lucro_reais}</b></div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -282,7 +290,7 @@ if st.session_state.lista_produtos:
             
             st.divider()
             
-            # --- DRE NATIVA ---
+            # --- DRE ---
             st.caption("EXTRATO FINANCEIRO")
             
             r1, r2 = st.columns([3, 1])
@@ -323,7 +331,7 @@ if st.session_state.lista_produtos:
             
             st.write("")
             
-            # --- CAIXA DE DESTAQUE DO RESULTADO (O PULO DO GATO) ---
+            # --- CAIXA DE DESTAQUE DO RESULTADO ---
             st.markdown(f"""
             <div style="{box_style} padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
                 <span style="font-weight: 700; font-size: 14px;">LUCRO LÍQUIDO</span>
@@ -353,7 +361,8 @@ if st.session_state.lista_produtos:
             "SKU": it.get('SKU', ''), 
             "Produto": it['Produto'], 
             "Preco Final": pf, 
-            "Lucro": luc
+            "Lucro": luc,
+            "Margem %": (luc/pf)*100 if pf else 0
         })
         
     df_final = pd.DataFrame(dados_csv)
