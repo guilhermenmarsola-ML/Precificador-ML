@@ -3,7 +3,7 @@ import pandas as pd
 import time
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - V28 Semáforo", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - V29 Final", layout="centered", page_icon="💎")
 
 # --- 2. ESTADO (MEMORY) ---
 if 'lista_produtos' not in st.session_state:
@@ -25,12 +25,11 @@ init_state('n_taxa', 16.5)
 init_state('n_erp', 85.44)
 init_state('n_merp', 20.0)
 
-# --- 3. DESIGN SYSTEM (CSS HÍBRIDO) ---
+# --- 3. DESIGN SYSTEM ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
 
-    /* Fundo Geral */
     .stApp { background-color: #FAFAFA; font-family: 'Inter', sans-serif; }
     
     /* Input Card */
@@ -66,36 +65,20 @@ st.markdown("""
         text-align: center;
     }
 
-    /* Tipografia Visual */
     .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
     .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
     
     .price-hero { 
-        font-size: 32px; 
-        font-weight: 800; 
-        letter-spacing: -1px; 
-        color: #262626;
-        margin: 5px 0;
+        font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0;
     }
     
-    /* PILLS (TAGS DE LUCRO) - ATUALIZADO V28 */
-    .pill {
-        padding: 6px 12px;
-        border-radius: 20px;
-        font-size: 13px;
-        font-weight: 700;
-        display: inline-block;
-    }
-    /* Verde (> 15%) */
+    /* PILLS (TAGS) */
+    .pill { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; display: inline-block; }
     .pill-green { background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5; }
-    
-    /* Amarelo (8% a 14.99%) */
     .pill-yellow { background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D; }
-    
-    /* Vermelho (< 8%) */
     .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
 
-    /* Inputs Limpos */
+    /* Inputs */
     div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input {
         background-color: #FAFAFA !important;
         border: 1px solid #E5E5E5 !important;
@@ -103,7 +86,7 @@ st.markdown("""
         border-radius: 8px !important;
     }
     
-    /* Botão Principal */
+    /* Botão */
     div.stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #2563EB, #1D4ED8);
         color: white;
@@ -120,7 +103,6 @@ st.markdown("""
 with st.sidebar:
     st.header("Ajustes")
     imposto_padrao = st.number_input("Impostos (%)", value=27.0, step=0.5)
-    
     with st.expander("Tabela Frete ML (<79)", expanded=True):
         taxa_12_29 = st.number_input("12-29", value=6.25)
         taxa_29_50 = st.number_input("29-50", value=6.50)
@@ -151,10 +133,9 @@ def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, i
         custos = custo_base + taxa
         preco = (custos + lucro_alvo_reais) / divisor
         if p_min <= preco < p_max: return preco, nome
-        
     return preco_est_1, "Frete Manual"
 
-# --- 6. CALLBACK (ADICIONAR) ---
+# --- 6. CALLBACK ---
 def adicionar_produto_action():
     if not st.session_state.n_nome:
         st.toast("Nome obrigatório!", icon="⚠️")
@@ -202,7 +183,7 @@ col_t, col_c = st.columns([3, 1])
 col_t.title("Precificador")
 col_c.caption(f"{len(st.session_state.lista_produtos)} itens")
 
-# --- CARD DE INPUT ---
+# --- INPUT CARD ---
 st.markdown('<div class="input-card">', unsafe_allow_html=True)
 
 st.text_input("MLB (ID do Anúncio)", key="n_mlb", placeholder="Ex: MLB-12345678")
@@ -226,10 +207,9 @@ st.write("")
 st.button("✨ Precificar e Adicionar", type="primary", use_container_width=True, on_click=adicionar_produto_action)
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- FEED DE PRODUTOS ---
+# --- FEED ---
 if st.session_state.lista_produtos:
     
-    # Loop Reverso (Usando índice correto para edição)
     total_itens = len(st.session_state.lista_produtos)
     
     for i in range(total_itens - 1, -1, -1):
@@ -249,18 +229,22 @@ if st.session_state.lista_produtos:
         lucro_final = preco_final_calc - custos_totais + item['Bonus']
         margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
         
-        # --- LÓGICA DE CORES (SEMÁFORO) V28 ---
+        # --- CORES (SEMÁFORO) ---
         txt_lucro = f"R$ {lucro_final:.2f}"
+        sinal = "+" if lucro_final > 0 else "-"
+        txt_lucro = f"{sinal} R$ {abs(lucro_final):.2f}"
         
         if margem_final < 8.0:
-            pill_class = "pill-red" # Vermelho (< 8%)
+            pill_class = "pill-red"
+            box_style = "background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2;" # Estilo do Box Final
         elif 8.0 <= margem_final < 15.0:
-            pill_class = "pill-yellow" # Amarelo (8% a 14.9%)
+            pill_class = "pill-yellow"
+            box_style = "background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D;"
         else:
-            pill_class = "pill-green" # Verde (>= 15%)
-            txt_lucro = f"+ {txt_lucro}" # Adiciona sinal de mais só no verde
+            pill_class = "pill-green"
+            box_style = "background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5;"
 
-        # --- CARD VISUAL ---
+        # --- CARD ---
         sku_display = item.get('SKU', '-')
         
         st.markdown(f"""
@@ -283,7 +267,6 @@ if st.session_state.lista_produtos:
         with st.expander("⚙️ Editar e Detalhes"):
             st.caption("AJUSTES RÁPIDOS")
             
-            # Callbacks
             def update_item(idx=i, key_id=item['id'], field=None, key_st=None):
                 st.session_state.lista_produtos[idx][field] = st.session_state[key_st]
 
@@ -338,17 +321,15 @@ if st.session_state.lista_produtos:
                 r1.markdown(":green[(+) Rebate / Bônus]")
                 r2.markdown(f":green[+ R$ {item['Bonus']:.2f}]")
             
-            st.divider()
+            st.write("")
             
-            fr1, fr2 = st.columns([3, 1])
-            fr1.markdown("#### RESULTADO LÍQUIDO")
-            
-            # Cor do Resultado na DRE
-            if margem_final < 8.0: cor_res = ":red"
-            elif margem_final < 15.0: cor_res = ":orange"
-            else: cor_res = ":green"
-                
-            fr2.markdown(f"#### {cor_res}[R$ {lucro_final:.2f}]")
+            # --- CAIXA DE DESTAQUE DO RESULTADO (O PULO DO GATO) ---
+            st.markdown(f"""
+            <div style="{box_style} padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-weight: 700; font-size: 14px;">LUCRO LÍQUIDO</span>
+                <span style="font-weight: 800; font-size: 18px;">R$ {lucro_final:.2f}</span>
+            </div>
+            """, unsafe_allow_html=True)
             
             st.write("")
             
