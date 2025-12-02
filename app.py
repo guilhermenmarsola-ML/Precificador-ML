@@ -4,7 +4,7 @@ import time
 import re
 
 # --- 1. CONFIGURAÇÃO ---
-st.set_page_config(page_title="Precificador 2026 - Import Manual", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - Mapeamento", layout="centered", page_icon="💎")
 
 # --- 2. ESTADO ---
 if 'lista_produtos' not in st.session_state:
@@ -43,9 +43,6 @@ st.markdown("""
     .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
     div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input { background-color: #FAFAFA !important; border: 1px solid #E5E5E5 !important; color: #333 !important; border-radius: 8px !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border-radius: 10px; height: 50px; border: none; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
-    
-    /* Import Box */
-    .import-debug { background-color: #f1f5f9; padding: 10px; border-radius: 8px; font-size: 12px; border: 1px dashed #cbd5e1; margin-bottom: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -54,10 +51,18 @@ def limpar_valor_dinheiro(valor):
     if pd.isna(valor) or valor == "" or valor == "-": return 0.0
     if isinstance(valor, (int, float)): return float(valor)
     valor_str = str(valor).strip()
+    # Remove R$, espaços e caracteres que não sejam numeros, virgula, ponto ou traço
     valor_str = re.sub(r'[^\d,\.-]', '', valor_str)
     if not valor_str: return 0.0
-    if ',' in valor_str and '.' in valor_str: valor_str = valor_str.replace('.', '').replace(',', '.') 
-    elif ',' in valor_str: valor_str = valor_str.replace(',', '.')
+    
+    # Lógica Brasil (1.200,00) vs EUA (1,200.00)
+    # Se tem vírgula no final (ex: ,00 ou ,5), é decimal Brasil
+    if ',' in valor_str:
+        if valor_str.count('.') > 0: # Tem ponto de milhar (1.500,00)
+            valor_str = valor_str.replace('.', '').replace(',', '.')
+        else: # Só tem virgula (1500,00)
+            valor_str = valor_str.replace(',', '.')
+            
     try: return float(valor_str)
     except: return 0.0
 
@@ -77,94 +82,94 @@ with st.sidebar:
         taxa_minima = st.number_input("Min", value=3.25)
     st.divider()
     
-    # --- ÁREA DE IMPORTAÇÃO MANUAL ---
+    # --- ÁREA DE IMPORTAÇÃO (MAPEAMENTO MANUAL) ---
     st.markdown("### 📂 Importar Planilha")
     uploaded_file = st.file_uploader("Arraste seu Excel", type=['xlsx'])
     
     if uploaded_file is not None:
         try:
             xl = pd.ExcelFile(uploaded_file)
-            abas = xl.sheet_names
+            aba_selecionada = st.selectbox("1. Selecione a aba:", xl.sheet_names, index=0)
+            header_row = st.number_input("2. Linha do Cabeçalho (Teste 8 ou 9):", value=8, min_value=0, step=1)
             
-            # 1. Escolha a Aba
-            aba_escolhida = st.selectbox("1. Qual aba usar?", abas, index=0)
+            # Carrega prévia
+            df_preview = xl.parse(aba_selecionada, header=header_row, nrows=5)
             
-            # 2. Escolha a Linha do Cabeçalho
-            st.write("2. Ajuste a linha até ver os nomes corretos (Anúncio, Produto, CMV):")
-            header_row = st.number_input("Linha do Cabeçalho", value=8, min_value=0, step=1)
+            # Limpa colunas vazias ou sem nome
+            cols_validas = [c for c in df_preview.columns if "Unnamed" not in str(c)]
             
-            # 3. Preview
-            df_preview = xl.parse(aba_escolhida, header=header_row, nrows=3)
-            colunas_limpas = [str(c).strip() for c in df_preview.columns]
+            st.write("---")
+            st.caption("3. Mapeie as Colunas (Selecione a coluna correspondente):")
             
-            st.markdown("<div class='import-debug'><b>Colunas lidas:</b><br>" + ", ".join(colunas_limpas[:5]) + "...</div>", unsafe_allow_html=True)
+            # Função para tentar adivinhar o indice padrão
+            def get_idx(options, keyword):
+                for i, opt in enumerate(options):
+                    if keyword.lower() in str(opt).lower(): return i
+                return 0
+
+            # SELETORES DE MAPEAMENTO
+            col_nome = st.selectbox("Nome do Produto", cols_validas, index=get_idx(cols_validas, "Produto"))
+            col_mlb = st.selectbox("Código / MLB / Anúncio", cols_validas, index=get_idx(cols_validas, "Anúncio"))
+            col_cmv = st.selectbox("Custo (CMV)", cols_validas, index=get_idx(cols_validas, "CMV"))
+            col_preco = st.selectbox("Preço de Venda (Usado)", cols_validas, index=get_idx(cols_validas, "Preço Usado"))
+            col_frete = st.selectbox("Frete Manual (>79)", cols_validas, index=get_idx(cols_validas, "Frete do anúncio"))
+            col_taxa = st.selectbox("Taxa ML (%)", cols_validas, index=get_idx(cols_validas, "TX ML"))
+            col_desc = st.selectbox("Desconto (%)", cols_validas, index=get_idx(cols_validas, "Desconto"))
+            col_bonus = st.selectbox("Bônus / Rebate", cols_validas, index=get_idx(cols_validas, "Bônus"))
             
-            # Validação Visual
-            if "Nome do Produto" in colunas_limpas or "Anúncio" in colunas_limpas or "Produto" in colunas_limpas:
-                st.success("✅ Cabeçalho parece correto!")
+            st.info(f"Prévia do Preço lido: {df_preview[col_preco].iloc[0]}")
+
+            if st.button("✅ Importar com este Mapeamento", type="primary"):
+                # Lê o arquivo inteiro
+                df = xl.parse(aba_selecionada, header=header_row)
+                count = 0
                 
-                if st.button("Processar Importação", type="primary"):
-                    # Ler arquivo completo
-                    df = xl.parse(aba_escolhida, header=header_row)
-                    
-                    # Normalizar colunas (lower + strip)
-                    df.columns = [str(c).strip().lower() for c in df.columns]
-                    
-                    count = 0
-                    for index, row in df.iterrows():
-                        try:
-                            # Busca colunas (flexível)
-                            def get_val(tags):
-                                for t in tags:
-                                    if t.lower() in df.columns: return row[t.lower()]
-                                return None
+                for index, row in df.iterrows():
+                    try:
+                        # Pega valores brutos baseado na escolha do usuário
+                        produto = str(row[col_nome])
+                        if not produto or produto == 'nan': continue
 
-                            produto = str(get_val(['Nome do Produto', 'Produto', 'Descrição']))
-                            if not produto or produto == 'nan': continue
+                        mlb = str(row[col_mlb])
+                        
+                        # Limpeza Pesada nos Valores
+                        cmv = limpar_valor_dinheiro(row[col_cmv])
+                        preco_base = limpar_valor_dinheiro(row[col_preco])
+                        frete = limpar_valor_dinheiro(row[col_frete])
+                        tx_ml = limpar_valor_dinheiro(row[col_taxa])
+                        desc = limpar_valor_dinheiro(row[col_desc])
+                        bonus = limpar_valor_dinheiro(row[col_bonus])
+                        
+                        # Defaults
+                        if frete == 0: frete = 18.86
+                        if tx_ml == 0: tx_ml = 16.5
 
-                            mlb = str(get_val(['Anúncio', 'MLB', 'Codigo']))
-                            sku = str(get_val(['SKU', 'Ref'])) # Se não tiver, vem None
-                            
-                            cmv = limpar_valor_dinheiro(get_val(['CMV', 'Custo']))
-                            preco_base = limpar_valor_dinheiro(get_val(['Preço Usado', 'Preço', 'Preço Venda']))
-                            
-                            frete = limpar_valor_dinheiro(get_val(['Frete do anúncio', 'Frete']))
-                            if frete == 0: frete = 18.86
-                            
-                            tx_ml = limpar_valor_dinheiro(get_val(['TX ML', 'Taxa ML', 'Comissão']))
-                            if tx_ml == 0: tx_ml = 16.5
-                            
-                            desc = limpar_valor_dinheiro(get_val(['% de Desconto', 'Desconto']))
-                            bonus = limpar_valor_dinheiro(get_val(['Bônus ML', 'Bonus', 'Rebate']))
-
-                            novo_item = {
-                                "id": int(time.time() * 1000) + index,
-                                "MLB": mlb if mlb != 'nan' else '',
-                                "SKU": sku if sku and sku != 'nan' else '',
-                                "Produto": produto,
-                                "CMV": cmv,
-                                "FreteManual": frete,
-                                "TaxaML": tx_ml,
-                                "Extra": 0.0,
-                                "PrecoERP": 0.0, "MargemERP": 0.0,
-                                "PrecoBase": preco_base,
-                                "DescontoPct": desc,
-                                "Bonus": bonus
-                            }
-                            st.session_state.lista_produtos.append(novo_item)
-                            count += 1
-                        except: continue
-                    
-                    st.toast(f"{count} importados!", icon="🚀")
-                    time.sleep(1)
-                    reiniciar_app()
-            else:
-                st.warning("Ajuste o número da linha acima até ver 'Nome do Produto'.")
+                        novo_item = {
+                            "id": int(time.time() * 1000) + index,
+                            "MLB": mlb,
+                            "SKU": "",
+                            "Produto": produto,
+                            "CMV": cmv,
+                            "FreteManual": frete,
+                            "TaxaML": tx_ml,
+                            "Extra": 0.0,
+                            "PrecoERP": 0.0, "MargemERP": 0.0,
+                            "PrecoBase": preco_base,
+                            "DescontoPct": desc,
+                            "Bonus": bonus
+                        }
+                        st.session_state.lista_produtos.append(novo_item)
+                        count += 1
+                    except: continue
+                
+                st.toast(f"{count} produtos importados!", icon="🚀")
+                time.sleep(1)
+                reiniciar_app()
                 
         except Exception as e:
             st.error(f"Erro: {e}")
 
-# --- 5. LÓGICA ---
+# --- 6. LÓGICA DE NEGÓCIO ---
 def identificar_faixa_frete(preco):
     if preco >= 79.00: return "manual", 0.0
     elif 50.00 <= preco < 79.00: return "Tab. 50-79", taxa_50_79
@@ -176,8 +181,10 @@ def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, i
     custos_fixos_1 = custo_base + frete_manual
     divisor = 1 - ((taxa_ml_pct + imposto_pct) / 100)
     if divisor <= 0: return 0.0, "Erro"
+    
     preco_est_1 = (custos_fixos_1 + lucro_alvo_reais) / divisor
     if preco_est_1 >= 79.00: return preco_est_1, "Frete Manual"
+    
     for taxa, nome, p_min, p_max in [
         (taxa_50_79, "Tab. 50-79", 50, 79),
         (taxa_29_50, "Tab. 29-50", 29, 50),
@@ -188,7 +195,7 @@ def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, i
         if p_min <= preco < p_max: return preco, nome
     return preco_est_1, "Frete Manual"
 
-# --- 6. CALLBACK ---
+# --- 7. CALLBACK ---
 def adicionar_produto_action():
     if not st.session_state.n_nome:
         st.toast("Nome obrigatório!", icon="⚠️")
@@ -228,7 +235,7 @@ def adicionar_produto_action():
     st.session_state.n_extra = 0.00
 
 # ==============================================================================
-# 7. INTERFACE PRINCIPAL
+# 8. INTERFACE PRINCIPAL
 # ==============================================================================
 
 col_t, col_c = st.columns([3, 1])
@@ -296,14 +303,14 @@ if st.session_state.lista_produtos:
         txt_lucro_reais = f"R$ {lucro_final:.2f}"
         if lucro_final > 0: txt_lucro_reais = "+ " + txt_lucro_reais
 
+        # --- CARD ---
         sku_display = item.get('SKU', '-')
-        if not sku_display: sku_display = ""
         
         st.markdown(f"""
         <div class="feed-card">
             <div class="card-header">
                 <div>
-                    <div class="sku-text">{item['MLB']} {sku_display}</div>
+                    <div class="sku-text">{item['MLB']} • {sku_display}</div>
                     <div class="title-text">{item['Produto']}</div>
                 </div>
                 <div class="{pill_class} pill">{txt_pill}</div>
@@ -375,6 +382,7 @@ if st.session_state.lista_produtos:
             
             st.write("")
             
+            # --- CAIXA DE DESTAQUE DO RESULTADO ---
             st.markdown(f"""
             <div style="{box_style} padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
                 <span style="font-weight: 700; font-size: 14px;">LUCRO LÍQUIDO</span>
