@@ -3,10 +3,10 @@ import pandas as pd
 import time
 import re
 
-# --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - AutoScan", layout="centered", page_icon="💎")
+# --- 1. CONFIGURAÇÃO ---
+st.set_page_config(page_title="Precificador 2026 - Import Debug", layout="centered", page_icon="💎")
 
-# --- 2. ESTADO (MEMORY) ---
+# --- 2. ESTADO ---
 if 'lista_produtos' not in st.session_state:
     st.session_state.lista_produtos = []
 
@@ -14,86 +14,35 @@ def init_state(key, value):
     if key not in st.session_state:
         st.session_state[key] = value
 
-# Variáveis Temporárias
 init_state('n_mlb', '') 
 init_state('n_sku', '') 
 init_state('n_nome', '')
 init_state('n_cmv', 32.57)
 init_state('n_extra', 0.00)
-# Variáveis Fixas
 init_state('n_frete', 18.86)
 init_state('n_taxa', 16.5)
 init_state('n_erp', 85.44)
 init_state('n_merp', 20.0)
 
-# --- 3. DESIGN SYSTEM ---
+# --- 3. CSS (DESIGN SYSTEM V30) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
-
     .stApp { background-color: #FAFAFA; font-family: 'Inter', sans-serif; }
     
-    .input-card {
-        background: white;
-        border-radius: 20px;
-        padding: 24px;
-        box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05);
-        border: 1px solid #EFEFEF;
-        margin-bottom: 30px;
-    }
-
-    .feed-card {
-        background: white;
-        border-radius: 16px;
-        border: 1px solid #DBDBDB;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.02);
-        margin-bottom: 15px;
-        overflow: hidden;
-    }
-    
-    .card-header {
-        padding: 15px 20px;
-        border-bottom: 1px solid #F0F0F0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    
+    .input-card { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #EFEFEF; margin-bottom: 30px; }
+    .feed-card { background: white; border-radius: 16px; border: 1px solid #DBDBDB; box-shadow: 0 2px 5px rgba(0,0,0,0.02); margin-bottom: 15px; overflow: hidden; }
+    .card-header { padding: 15px 20px; border-bottom: 1px solid #F0F0F0; display: flex; justify-content: space-between; align-items: center; }
     .card-body { padding: 20px; text-align: center; }
-
     .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
     .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
-    
-    .price-hero { 
-        font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0;
-    }
-    
+    .price-hero { font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0; }
     .pill { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; display: inline-block; }
     .pill-green { background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5; }
     .pill-yellow { background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D; }
     .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
-
-    div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input {
-        background-color: #FAFAFA !important;
-        border: 1px solid #E5E5E5 !important;
-        color: #333 !important;
-        border-radius: 8px !important;
-    }
-    
-    div.stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #2563EB, #1D4ED8);
-        color: white;
-        border-radius: 10px;
-        height: 50px;
-        border: none;
-        font-weight: 600;
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
-    }
-    
-    /* Debug Box */
-    .debug-box {
-        font-size: 12px; color: #666; background: #eee; padding: 10px; border-radius: 5px; margin-top: 10px;
-    }
+    div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input { background-color: #FAFAFA !important; border: 1px solid #E5E5E5 !important; color: #333 !important; border-radius: 8px !important; }
+    div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border-radius: 10px; height: 50px; border: none; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
 </style>
 """, unsafe_allow_html=True)
 
@@ -104,8 +53,8 @@ def limpar_valor_dinheiro(valor):
     valor_str = str(valor).strip()
     valor_str = re.sub(r'[^\d,\.-]', '', valor_str)
     if not valor_str: return 0.0
-    if ',' in valor_str:
-        valor_str = valor_str.replace('.', '').replace(',', '.')
+    if ',' in valor_str and '.' in valor_str: valor_str = valor_str.replace('.', '').replace(',', '.') # 1.200,50 -> 1200.50
+    elif ',' in valor_str: valor_str = valor_str.replace(',', '.') # 50,00 -> 50.00
     try: return float(valor_str)
     except: return 0.0
 
@@ -118,109 +67,107 @@ with st.sidebar:
         taxa_29_50 = st.number_input("29-50", value=6.50)
         taxa_50_79 = st.number_input("50-79", value=6.75)
         taxa_minima = st.number_input("Min", value=3.25)
-        
     st.divider()
     
-    # --- ÁREA DE IMPORTAÇÃO (COM SCANNER) ---
+    # --- ÁREA DE IMPORTAÇÃO (DEBUGGER) ---
     st.markdown("### 📂 Importar Planilha")
     uploaded_file = st.file_uploader("Arraste seu Excel/CSV", type=['xlsx', 'csv'])
     
     if uploaded_file is not None:
+        # Seletor Manual de Linha de Cabeçalho (Caso o auto falhe)
+        header_row_manual = st.number_input("Cabeçalho está na linha:", value=0, min_value=0, help="0 é a primeira linha. Se sua planilha tem titulo, aumente.")
+        
         if st.button("Processar Importação", type="primary"):
             try:
-                # 1. Carrega o arquivo "cru" (sem cabeçalho definido ainda)
+                # 1. Leitura Crua
                 if uploaded_file.name.endswith('.csv'):
-                    try: df_raw = pd.read_csv(uploaded_file, header=None, sep=';')
-                    except: uploaded_file.seek(0); df_raw = pd.read_csv(uploaded_file, header=None, sep=',')
+                    try: df = pd.read_csv(uploaded_file, header=header_row_manual, sep=';')
+                    except: uploaded_file.seek(0); df = pd.read_csv(uploaded_file, header=header_row_manual, sep=',')
                 else:
-                    df_raw = pd.read_excel(uploaded_file, header=None)
+                    df = pd.read_excel(uploaded_file, header=header_row_manual)
                 
-                # 2. AUTO-SCANNER: Procura onde começa a tabela
-                header_row_index = -1
+                # 2. Diagnóstico (Mostra o que leu)
+                with st.expander("🔍 Ver o que o sistema leu (Debug)", expanded=True):
+                    st.write("Colunas encontradas:", list(df.columns))
+                    st.dataframe(df.head(3))
+
+                # 3. Processamento
+                count = 0
+                erros = []
                 
-                # Varre as primeiras 20 linhas procurando palavras-chave
-                for i in range(min(20, len(df_raw))):
-                    row_values = [str(val).strip().lower() for val in df_raw.iloc[i].values]
-                    # Se achar "cmv" E "produto" (ou anuncio) na mesma linha, achou o cabeçalho!
-                    if "cmv" in row_values and ("produto" in row_values or "nome do produto" in row_values or "anúncio" in row_values or "anuncio" in row_values):
-                        header_row_index = i
-                        break
+                for index, row in df.iterrows():
+                    try:
+                        # Função de busca inteligente (Case Insensitive e remove espaços)
+                        def get_val(col_variations, default=None):
+                            # Normaliza as colunas do DF
+                            cols_norm = {str(c).strip().lower(): c for c in df.columns}
+                            
+                            for opt in col_variations:
+                                opt_norm = opt.strip().lower()
+                                if opt_norm in cols_norm:
+                                    return row[cols_norm[opt_norm]]
+                            return default
+
+                        # MAPA DE COLUNAS (Baseado na sua planilha original)
+                        mlb = str(get_val(['Anúncio', 'MLB', 'Codigo', 'ID'], ''))
+                        sku = str(get_val(['SKU', 'Referencia', 'Ref'], ''))
+                        produto = str(get_val(['Nome do Produto', 'Produto', 'Titulo', 'Nome', 'Descrição'], ''))
+                        
+                        # Se não achou nome, tenta achar na coluna 2 ou 3 (fallback)
+                        if not produto or produto == 'nan':
+                            if len(row) > 2: produto = str(row.iloc[2]) # Tenta pegar a terceira coluna
+
+                        # Se ainda não tem produto válido, pula
+                        if not produto or produto == 'nan' or produto == 'None': 
+                            continue
+
+                        # Valores Numéricos
+                        cmv = limpar_valor_dinheiro(get_val(['CMV', 'Custo', 'Custo Produto'], 0))
+                        preco_base = limpar_valor_dinheiro(get_val(['Preço Usado', 'Preço', 'Preco', 'Preço Venda'], 0))
+                        frete_manual = limpar_valor_dinheiro(get_val(['Frete do anúncio', 'Frete', 'Frete Manual'], 18.86))
+                        taxa_ml_item = limpar_valor_dinheiro(get_val(['TX ML', 'Taxa ML', 'Comissão'], 16.5))
+                        desc_pct = limpar_valor_dinheiro(get_val(['% de Desconto', 'Desconto', 'Desc %'], 0))
+                        bonus = limpar_valor_dinheiro(get_val(['Bônus ML', 'Bonus', 'Rebate'], 0))
+
+                        # Correção de Frete Zero
+                        if frete_manual == 0: frete_manual = 18.86
+                        if taxa_ml_item == 0: taxa_ml_item = 16.5
+
+                        novo_item = {
+                            "id": int(time.time() * 1000) + index,
+                            "MLB": mlb if mlb != 'nan' else '',
+                            "SKU": sku if sku != 'nan' else '',
+                            "Produto": produto,
+                            "CMV": cmv,
+                            "FreteManual": frete_manual,
+                            "TaxaML": taxa_ml_item,
+                            "Extra": 0.0,
+                            "PrecoERP": 0.0,
+                            "MargemERP": 0.0,
+                            "PrecoBase": preco_base,
+                            "DescontoPct": desc_pct,
+                            "Bonus": bonus,
+                        }
+                        st.session_state.lista_produtos.append(novo_item)
+                        count += 1
+                    except Exception as e:
+                        erros.append(f"Linha {index}: {e}")
+                        continue
                 
-                if header_row_index == -1:
-                    st.error("❌ Não encontrei as colunas 'CMV' e 'Produto' nas primeiras 20 linhas.")
-                    st.caption("Verifique se os nomes das colunas estão corretos.")
-                    # Mostra as primeiras linhas para debug
-                    with st.expander("Ver como o arquivo foi lido"):
-                        st.dataframe(df_raw.head(5))
-                else:
-                    # 3. Define o cabeçalho correto e recarrega
-                    df_upload = df_raw.copy()
-                    df_upload.columns = df_upload.iloc[header_row_index] # Define a linha achada como nome das colunas
-                    df_upload = df_upload[header_row_index+1:] # Pega tudo que está abaixo
-                    df_upload = df_upload.reset_index(drop=True) # Reseta o índice
-                    
-                    # Normaliza nomes das colunas
-                    df_upload.columns = [str(c).strip().lower() for c in df_upload.columns]
-                    
-                    count = 0
-                    for index, row in df_upload.iterrows():
-                        try:
-                            # Função auxiliar para buscar coluna (ignora maiúscula/minúscula)
-                            def get_col(options, default_val=''):
-                                for opt in options:
-                                    if opt.lower() in df_upload.columns: return row[opt.lower()]
-                                return default_val
-
-                            # Mapeamento
-                            mlb = str(get_col(['Anúncio', 'MLB', 'Codigo', 'ID'], ''))
-                            sku = str(get_col(['SKU', 'Referencia', 'Ref'], ''))
-                            produto = str(get_col(['Nome do Produto', 'Produto', 'Titulo', 'Nome'], ''))
-                            
-                            if not produto or produto == 'nan': continue
-
-                            cmv = limpar_valor_dinheiro(get_col(['CMV', 'Custo', 'Custo Produto']))
-                            preco_base = limpar_valor_dinheiro(get_col(['Preço Usado', 'Preço', 'Preco', 'Preço Venda']))
-                            
-                            frete_manual = limpar_valor_dinheiro(get_col(['Frete do anúncio', 'Frete', 'Frete Manual']))
-                            if frete_manual == 0: frete_manual = 18.86
-                            
-                            taxa_ml_item = limpar_valor_dinheiro(get_col(['TX ML', 'Taxa ML', 'Comissão']))
-                            if taxa_ml_item == 0: taxa_ml_item = 16.5
-                            
-                            desc_pct = limpar_valor_dinheiro(get_col(['% de Desconto', 'Desconto', 'Desc %']))
-                            bonus = limpar_valor_dinheiro(get_col(['Bônus ML', 'Bonus', 'Rebate']))
-
-                            novo_item = {
-                                "id": int(time.time() * 1000) + index,
-                                "MLB": mlb if mlb != 'nan' else '',
-                                "SKU": sku if sku != 'nan' else '',
-                                "Produto": produto,
-                                "CMV": cmv,
-                                "FreteManual": frete_manual,
-                                "TaxaML": taxa_ml_item,
-                                "Extra": 0.0,
-                                "PrecoERP": 0.0,
-                                "MargemERP": 0.0,
-                                "PrecoBase": preco_base,
-                                "DescontoPct": desc_pct,
-                                "Bonus": bonus,
-                            }
-                            st.session_state.lista_produtos.append(novo_item)
-                            count += 1
-                        except: continue
-                    
-                    st.toast(f"Sucesso! Tabela encontrada na linha {header_row_index + 1}.", icon="✅")
-                    st.success(f"{count} produtos importados!")
-                    time.sleep(1.5)
-                    
-                    # Rerun Seguro
+                if count > 0:
+                    st.success(f"✅ {count} produtos importados com sucesso!")
+                    time.sleep(2)
                     if hasattr(st, 'rerun'): st.rerun()
                     else: st.experimental_rerun()
+                else:
+                    st.warning("⚠️ 0 produtos importados. Verifique se os nomes das colunas batem com a lista abaixo:")
+                    st.code("Colunas esperadas: 'Nome do Produto', 'CMV', 'Preço Usado', 'Frete do anúncio', 'TX ML'")
+                    if erros: st.error(f"Erros técnicos: {erros[:3]}")
                 
             except Exception as e:
-                st.error(f"Erro técnico: {e}")
+                st.error(f"Erro Crítico: {e}")
 
-# --- 5. LÓGICA DE NEGÓCIO ---
+# --- 5. LÓGICA ---
 def identificar_faixa_frete(preco):
     if preco >= 79.00: return "manual", 0.0
     elif 50.00 <= preco < 79.00: return "Tab. 50-79", taxa_50_79
@@ -232,7 +179,6 @@ def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, i
     custos_fixos_1 = custo_base + frete_manual
     divisor = 1 - ((taxa_ml_pct + imposto_pct) / 100)
     if divisor <= 0: return 0.0, "Erro"
-    
     preco_est_1 = (custos_fixos_1 + lucro_alvo_reais) / divisor
     if preco_est_1 >= 79.00: return preco_est_1, "Frete Manual"
     
@@ -279,7 +225,6 @@ def adicionar_produto_action():
     st.session_state.lista_produtos.append(novo_item)
     st.toast("Salvo!", icon="✅")
 
-    # Limpeza
     st.session_state.n_mlb = ""
     st.session_state.n_sku = "" 
     st.session_state.n_nome = ""
