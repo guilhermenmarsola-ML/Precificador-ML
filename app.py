@@ -13,8 +13,9 @@ def init_state(key, value):
     if key not in st.session_state:
         st.session_state[key] = value
 
-# Variáveis Temporárias
-init_state('n_mlb', '')
+# Variáveis Temporárias (Cadastro)
+init_state('n_mlb', '') # MLB
+init_state('n_sku', '') # NOVO: SKU Interno
 init_state('n_nome', '')
 init_state('n_cmv', 32.57)
 init_state('n_extra', 0.00)
@@ -87,7 +88,7 @@ st.markdown("""
     .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
 
     /* Inputs Limpos */
-    div[data-testid="stNumberInput"] input {
+    div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input {
         background-color: #FAFAFA !important;
         border: 1px solid #E5E5E5 !important;
         color: #333 !important;
@@ -163,6 +164,7 @@ def adicionar_produto_action():
     novo_item = {
         "id": int(time.time() * 1000),
         "MLB": st.session_state.n_mlb,
+        "SKU": st.session_state.n_sku, # SALVA O NOVO CAMPO
         "Produto": st.session_state.n_nome,
         "CMV": st.session_state.n_cmv,
         "FreteManual": st.session_state.n_frete,
@@ -179,6 +181,7 @@ def adicionar_produto_action():
 
     # Limpeza
     st.session_state.n_mlb = ""
+    st.session_state.n_sku = "" # LIMPA O SKU
     st.session_state.n_nome = ""
     st.session_state.n_cmv = 0.00
     st.session_state.n_extra = 0.00
@@ -195,19 +198,22 @@ col_c.caption(f"{len(st.session_state.lista_produtos)} itens")
 # --- CARD DE INPUT (CLEAN) ---
 st.markdown('<div class="input-card">', unsafe_allow_html=True)
 
-# Linha 1
+# Linha 0: MLB (NOVA POSIÇÃO: ACIMA)
+st.text_input("MLB (ID do Anúncio)", key="n_mlb", placeholder="Ex: MLB-12345678")
+
+# Linha 1: SKU e Produto
 c1, c2 = st.columns([1, 2])
-c1.text_input("Código", key="n_mlb", placeholder="SKU")
+c1.text_input("SKU (Interno)", key="n_sku", placeholder="Cód. Interno") # CAMPO NOVO
 c2.text_input("Produto", key="n_nome", placeholder="Nome do item")
 
-# Linha 2
+# Linha 2: Custos
 c3, c4 = st.columns(2)
 c3.number_input("Custo (CMV)", step=0.01, format="%.2f", key="n_cmv")
 c4.number_input("Frete (>79)", step=0.01, format="%.2f", key="n_frete")
 
 st.markdown("<hr style='margin: 15px 0; border-color: #eee;'>", unsafe_allow_html=True)
 
-# Linha 3
+# Linha 3: Estratégia
 c5, c6, c7 = st.columns(3)
 c5.number_input("Comissão %", step=0.5, format="%.1f", key="n_taxa")
 c6.number_input("Preço ERP", step=0.01, format="%.2f", key="n_erp")
@@ -243,12 +249,14 @@ if st.session_state.lista_produtos:
         
         # --- ESTRUTURA DO CARD (MISTURA HTML + NATIVO) ---
         
-        # 1. Cabeçalho Visual (HTML Puro - Seguro)
+        # 1. Cabeçalho Visual (HTML Puro)
+        # ADICIONADO SKU AQUI NO HTML
+        sku_display = item.get('SKU', '-') # Garante que não quebra se faltar
         st.markdown(f"""
         <div class="feed-card">
             <div class="card-header">
                 <div>
-                    <div class="sku-text">{item['MLB']}</div>
+                    <div class="sku-text">{item['MLB']} • {sku_display}</div>
                     <div class="title-text">{item['Produto']}</div>
                 </div>
                 <div class="{pill_class} pill">{txt_lucro}</div>
@@ -261,8 +269,7 @@ if st.session_state.lista_produtos:
         </div>
         """, unsafe_allow_html=True)
 
-        # 2. Área de Edição (Expander Nativo do Streamlit)
-        # IMPORTANTE: Usamos componentes nativos aqui para evitar qualquer erro de "código vazando"
+        # 2. Área de Edição (Expander Nativo)
         with st.expander("⚙️ Editar e Detalhes"):
             
             st.caption("AJUSTES RÁPIDOS")
@@ -283,10 +290,9 @@ if st.session_state.lista_produtos:
             
             st.divider()
             
-            # --- DRE NATIVA (BLINDADA CONTRA ERROS) ---
+            # --- DRE NATIVA ---
             st.caption("EXTRATO FINANCEIRO")
             
-            # Usamos st.columns para alinhar (Impossível dar erro visual de HTML)
             r1, r2 = st.columns([3, 1])
             r1.write("(+) Preço Tabela")
             r2.write(f"R$ {preco_base_calc:.2f}")
@@ -302,9 +308,8 @@ if st.session_state.lista_produtos:
             r1.markdown("**(=) RECEITA BRUTA**")
             r2.markdown(f"**R$ {preco_final_calc:.2f}**")
             
-            st.write("") # Espaço
+            st.write("") 
             
-            # Lista de Custos Nativos
             custos = [
                 (f"Impostos ({imposto_padrao}%)", imposto_val),
                 (f"Comissão ({item['TaxaML']}%)", comissao_val),
@@ -326,7 +331,6 @@ if st.session_state.lista_produtos:
             
             st.divider()
             
-            # Resultado Final Nativo
             fr1, fr2 = st.columns([3, 1])
             fr1.markdown("#### RESULTADO LÍQUIDO")
             cor = ":green" if lucro_final > 0 else ":red"
@@ -347,7 +351,14 @@ if st.session_state.lista_produtos:
         _, fr = identificar_faixa_frete(pf)
         if _ == "manual": fr = it['FreteManual']
         luc = pf - (it['CMV'] + it['Extra'] + fr + (pf*(imposto_padrao+it['TaxaML'])/100)) + it['Bonus']
-        dados_csv.append({"MLB": it['MLB'], "Produto": it['Produto'], "Preco Final": pf, "Lucro": luc})
+        # ADICIONADO SKU NA EXPORTAÇÃO
+        dados_csv.append({
+            "MLB": it['MLB'], 
+            "SKU": it.get('SKU', ''), 
+            "Produto": it['Produto'], 
+            "Preco Final": pf, 
+            "Lucro": luc
+        })
         
     df_final = pd.DataFrame(dados_csv)
     csv = df_final.to_csv(index=False).encode('utf-8')
