@@ -4,15 +4,7 @@ import time
 import re
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - Final V34", layout="centered", page_icon="💎")
-
-# --- FUNÇÃO DE REINÍCIO BLINDADA (CORREÇÃO DO ERRO) ---
-def reiniciar_app():
-    time.sleep(0.1)
-    if hasattr(st, 'rerun'):
-        st.rerun()
-    else:
-        st.experimental_rerun()
+st.set_page_config(page_title="Precificador 2026 - AutoScan", layout="centered", page_icon="💎")
 
 # --- 2. ESTADO (MEMORY) ---
 if 'lista_produtos' not in st.session_state:
@@ -97,6 +89,11 @@ st.markdown("""
         font-weight: 600;
         box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
     }
+    
+    /* Debug Box */
+    .debug-box {
+        font-size: 12px; color: #666; background: #eee; padding: 10px; border-radius: 5px; margin-top: 10px;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -124,74 +121,106 @@ with st.sidebar:
         
     st.divider()
     
-    # --- ÁREA DE IMPORTAÇÃO ---
+    # --- ÁREA DE IMPORTAÇÃO (COM SCANNER) ---
     st.markdown("### 📂 Importar Planilha")
     uploaded_file = st.file_uploader("Arraste seu Excel/CSV", type=['xlsx', 'csv'])
-    header_row = st.number_input("Linha do Cabeçalho (0 = Primeira)", value=0, min_value=0)
     
     if uploaded_file is not None:
         if st.button("Processar Importação", type="primary"):
             try:
+                # 1. Carrega o arquivo "cru" (sem cabeçalho definido ainda)
                 if uploaded_file.name.endswith('.csv'):
-                    try: df_upload = pd.read_csv(uploaded_file, header=header_row, sep=';')
-                    except: uploaded_file.seek(0); df_upload = pd.read_csv(uploaded_file, header=header_row, sep=',')
+                    try: df_raw = pd.read_csv(uploaded_file, header=None, sep=';')
+                    except: uploaded_file.seek(0); df_raw = pd.read_csv(uploaded_file, header=None, sep=',')
                 else:
-                    df_upload = pd.read_excel(uploaded_file, header=header_row)
+                    df_raw = pd.read_excel(uploaded_file, header=None)
                 
-                df_upload.columns = [str(c).strip().lower() for c in df_upload.columns]
-                count = 0
+                # 2. AUTO-SCANNER: Procura onde começa a tabela
+                header_row_index = -1
                 
-                for index, row in df_upload.iterrows():
-                    try:
-                        def get_col(options, default_val=''):
-                            for opt in options:
-                                if opt.lower() in df_upload.columns: return row[opt.lower()]
-                            return default_val
+                # Varre as primeiras 20 linhas procurando palavras-chave
+                for i in range(min(20, len(df_raw))):
+                    row_values = [str(val).strip().lower() for val in df_raw.iloc[i].values]
+                    # Se achar "cmv" E "produto" (ou anuncio) na mesma linha, achou o cabeçalho!
+                    if "cmv" in row_values and ("produto" in row_values or "nome do produto" in row_values or "anúncio" in row_values or "anuncio" in row_values):
+                        header_row_index = i
+                        break
+                
+                if header_row_index == -1:
+                    st.error("❌ Não encontrei as colunas 'CMV' e 'Produto' nas primeiras 20 linhas.")
+                    st.caption("Verifique se os nomes das colunas estão corretos.")
+                    # Mostra as primeiras linhas para debug
+                    with st.expander("Ver como o arquivo foi lido"):
+                        st.dataframe(df_raw.head(5))
+                else:
+                    # 3. Define o cabeçalho correto e recarrega
+                    df_upload = df_raw.copy()
+                    df_upload.columns = df_upload.iloc[header_row_index] # Define a linha achada como nome das colunas
+                    df_upload = df_upload[header_row_index+1:] # Pega tudo que está abaixo
+                    df_upload = df_upload.reset_index(drop=True) # Reseta o índice
+                    
+                    # Normaliza nomes das colunas
+                    df_upload.columns = [str(c).strip().lower() for c in df_upload.columns]
+                    
+                    count = 0
+                    for index, row in df_upload.iterrows():
+                        try:
+                            # Função auxiliar para buscar coluna (ignora maiúscula/minúscula)
+                            def get_col(options, default_val=''):
+                                for opt in options:
+                                    if opt.lower() in df_upload.columns: return row[opt.lower()]
+                                return default_val
 
-                        mlb = str(get_col(['Anúncio', 'MLB', 'Codigo', 'ID'], ''))
-                        sku = str(get_col(['SKU', 'Referencia', 'Ref'], ''))
-                        produto = str(get_col(['Nome do Produto', 'Produto', 'Titulo', 'Nome'], 'Produto Importado'))
-                        
-                        cmv = limpar_valor_dinheiro(get_col(['CMV', 'Custo', 'Custo Produto']))
-                        preco_base = limpar_valor_dinheiro(get_col(['Preço Usado', 'Preço', 'Preco', 'Preço Venda']))
-                        frete_manual = limpar_valor_dinheiro(get_col(['Frete do anúncio', 'Frete', 'Frete Manual']))
-                        if frete_manual == 0: frete_manual = 18.86
-                        
-                        taxa_ml_item = limpar_valor_dinheiro(get_col(['TX ML', 'Taxa ML', 'Comissão']))
-                        if taxa_ml_item == 0: taxa_ml_item = 16.5
-                        
-                        desc_pct = limpar_valor_dinheiro(get_col(['% de Desconto', 'Desconto', 'Desc %']))
-                        bonus = limpar_valor_dinheiro(get_col(['Bônus ML', 'Bonus', 'Rebate']))
-                        
-                        if produto == 'nan' or produto == '' or produto == 'Produto Importado': continue
+                            # Mapeamento
+                            mlb = str(get_col(['Anúncio', 'MLB', 'Codigo', 'ID'], ''))
+                            sku = str(get_col(['SKU', 'Referencia', 'Ref'], ''))
+                            produto = str(get_col(['Nome do Produto', 'Produto', 'Titulo', 'Nome'], ''))
+                            
+                            if not produto or produto == 'nan': continue
 
-                        novo_item = {
-                            "id": int(time.time() * 1000) + index,
-                            "MLB": mlb if mlb != 'nan' else '',
-                            "SKU": sku if sku != 'nan' else '',
-                            "Produto": produto,
-                            "CMV": cmv,
-                            "FreteManual": frete_manual,
-                            "TaxaML": taxa_ml_item,
-                            "Extra": 0.0,
-                            "PrecoERP": 0.0,
-                            "MargemERP": 0.0,
-                            "PrecoBase": preco_base,
-                            "DescontoPct": desc_pct,
-                            "Bonus": bonus,
-                        }
-                        st.session_state.lista_produtos.append(novo_item)
-                        count += 1
-                    except: continue
-                
-                st.success(f"{count} produtos importados!")
-                time.sleep(1.5)
-                reiniciar_app() # USANDO A FUNÇÃO BLINDADA
+                            cmv = limpar_valor_dinheiro(get_col(['CMV', 'Custo', 'Custo Produto']))
+                            preco_base = limpar_valor_dinheiro(get_col(['Preço Usado', 'Preço', 'Preco', 'Preço Venda']))
+                            
+                            frete_manual = limpar_valor_dinheiro(get_col(['Frete do anúncio', 'Frete', 'Frete Manual']))
+                            if frete_manual == 0: frete_manual = 18.86
+                            
+                            taxa_ml_item = limpar_valor_dinheiro(get_col(['TX ML', 'Taxa ML', 'Comissão']))
+                            if taxa_ml_item == 0: taxa_ml_item = 16.5
+                            
+                            desc_pct = limpar_valor_dinheiro(get_col(['% de Desconto', 'Desconto', 'Desc %']))
+                            bonus = limpar_valor_dinheiro(get_col(['Bônus ML', 'Bonus', 'Rebate']))
+
+                            novo_item = {
+                                "id": int(time.time() * 1000) + index,
+                                "MLB": mlb if mlb != 'nan' else '',
+                                "SKU": sku if sku != 'nan' else '',
+                                "Produto": produto,
+                                "CMV": cmv,
+                                "FreteManual": frete_manual,
+                                "TaxaML": taxa_ml_item,
+                                "Extra": 0.0,
+                                "PrecoERP": 0.0,
+                                "MargemERP": 0.0,
+                                "PrecoBase": preco_base,
+                                "DescontoPct": desc_pct,
+                                "Bonus": bonus,
+                            }
+                            st.session_state.lista_produtos.append(novo_item)
+                            count += 1
+                        except: continue
+                    
+                    st.toast(f"Sucesso! Tabela encontrada na linha {header_row_index + 1}.", icon="✅")
+                    st.success(f"{count} produtos importados!")
+                    time.sleep(1.5)
+                    
+                    # Rerun Seguro
+                    if hasattr(st, 'rerun'): st.rerun()
+                    else: st.experimental_rerun()
                 
             except Exception as e:
-                st.error(f"Erro: {e}")
+                st.error(f"Erro técnico: {e}")
 
-# --- 5. LÓGICA ---
+# --- 5. LÓGICA DE NEGÓCIO ---
 def identificar_faixa_frete(preco):
     if preco >= 79.00: return "manual", 0.0
     elif 50.00 <= preco < 79.00: return "Tab. 50-79", taxa_50_79
@@ -250,6 +279,7 @@ def adicionar_produto_action():
     st.session_state.lista_produtos.append(novo_item)
     st.toast("Salvo!", icon="✅")
 
+    # Limpeza
     st.session_state.n_mlb = ""
     st.session_state.n_sku = "" 
     st.session_state.n_nome = ""
