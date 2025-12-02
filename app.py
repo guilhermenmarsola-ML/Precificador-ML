@@ -3,7 +3,7 @@ import pandas as pd
 import time
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - Final", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - Final V27", layout="centered", page_icon="💎")
 
 # --- 2. ESTADO (MEMORY) ---
 if 'lista_produtos' not in st.session_state:
@@ -14,8 +14,8 @@ def init_state(key, value):
         st.session_state[key] = value
 
 # Variáveis Temporárias (Cadastro)
-init_state('n_mlb', '') # MLB
-init_state('n_sku', '') # NOVO: SKU Interno
+init_state('n_mlb', '') 
+init_state('n_sku', '') 
 init_state('n_nome', '')
 init_state('n_cmv', 32.57)
 init_state('n_extra', 0.00)
@@ -28,12 +28,12 @@ init_state('n_merp', 20.0)
 # --- 3. DESIGN SYSTEM (CSS HÍBRIDO) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
 
     /* Fundo Geral */
     .stApp { background-color: #FAFAFA; font-family: 'Inter', sans-serif; }
     
-    /* Input Card (Novo Post Style) */
+    /* Input Card */
     .input-card {
         background: white;
         border-radius: 20px;
@@ -43,7 +43,7 @@ st.markdown("""
         margin-bottom: 30px;
     }
 
-    /* Feed Card (O Produto) */
+    /* Feed Card */
     .feed-card {
         background: white;
         border-radius: 16px;
@@ -164,7 +164,7 @@ def adicionar_produto_action():
     novo_item = {
         "id": int(time.time() * 1000),
         "MLB": st.session_state.n_mlb,
-        "SKU": st.session_state.n_sku, # SALVA O NOVO CAMPO
+        "SKU": st.session_state.n_sku, 
         "Produto": st.session_state.n_nome,
         "CMV": st.session_state.n_cmv,
         "FreteManual": st.session_state.n_frete,
@@ -181,7 +181,7 @@ def adicionar_produto_action():
 
     # Limpeza
     st.session_state.n_mlb = ""
-    st.session_state.n_sku = "" # LIMPA O SKU
+    st.session_state.n_sku = "" 
     st.session_state.n_nome = ""
     st.session_state.n_cmv = 0.00
     st.session_state.n_extra = 0.00
@@ -190,30 +190,25 @@ def adicionar_produto_action():
 # 7. INTERFACE PRINCIPAL
 # ==============================================================================
 
-# Cabeçalho
 col_t, col_c = st.columns([3, 1])
 col_t.title("Precificador")
 col_c.caption(f"{len(st.session_state.lista_produtos)} itens")
 
-# --- CARD DE INPUT (CLEAN) ---
+# --- CARD DE INPUT ---
 st.markdown('<div class="input-card">', unsafe_allow_html=True)
 
-# Linha 0: MLB (NOVA POSIÇÃO: ACIMA)
 st.text_input("MLB (ID do Anúncio)", key="n_mlb", placeholder="Ex: MLB-12345678")
 
-# Linha 1: SKU e Produto
 c1, c2 = st.columns([1, 2])
-c1.text_input("SKU (Interno)", key="n_sku", placeholder="Cód. Interno") # CAMPO NOVO
+c1.text_input("SKU (Interno)", key="n_sku", placeholder="Cód.")
 c2.text_input("Produto", key="n_nome", placeholder="Nome do item")
 
-# Linha 2: Custos
 c3, c4 = st.columns(2)
 c3.number_input("Custo (CMV)", step=0.01, format="%.2f", key="n_cmv")
 c4.number_input("Frete (>79)", step=0.01, format="%.2f", key="n_frete")
 
 st.markdown("<hr style='margin: 15px 0; border-color: #eee;'>", unsafe_allow_html=True)
 
-# Linha 3: Estratégia
 c5, c6, c7 = st.columns(3)
 c5.number_input("Comissão %", step=0.5, format="%.1f", key="n_taxa")
 c6.number_input("Preço ERP", step=0.01, format="%.2f", key="n_erp")
@@ -226,8 +221,12 @@ st.markdown('</div>', unsafe_allow_html=True)
 # --- FEED DE PRODUTOS ---
 if st.session_state.lista_produtos:
     
-    # Loop Reverso
-    for i, item in enumerate(reversed(st.session_state.lista_produtos)):
+    # CORREÇÃO CRÍTICA: Iterar pelos índices reais, em ordem reversa
+    # Isso garante que 'i' corresponda exatamente ao item na memória
+    total_itens = len(st.session_state.lista_produtos)
+    
+    for i in range(total_itens - 1, -1, -1):
+        item = st.session_state.lista_produtos[i]
         
         # --- CÁLCULO VIVO ---
         preco_base_calc = item['PrecoBase']
@@ -243,15 +242,12 @@ if st.session_state.lista_produtos:
         lucro_final = preco_final_calc - custos_totais + item['Bonus']
         margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
         
-        # Variáveis Visuais
         pill_class = "pill-green" if lucro_final > 0 else "pill-red"
         txt_lucro = f"+ R$ {lucro_final:.2f}" if lucro_final > 0 else f"- R$ {abs(lucro_final):.2f}"
         
-        # --- ESTRUTURA DO CARD (MISTURA HTML + NATIVO) ---
+        # --- CARD ---
+        sku_display = item.get('SKU', '-')
         
-        # 1. Cabeçalho Visual (HTML Puro)
-        # ADICIONADO SKU AQUI NO HTML
-        sku_display = item.get('SKU', '-') # Garante que não quebra se faltar
         st.markdown(f"""
         <div class="feed-card">
             <div class="card-header">
@@ -269,12 +265,10 @@ if st.session_state.lista_produtos:
         </div>
         """, unsafe_allow_html=True)
 
-        # 2. Área de Edição (Expander Nativo)
         with st.expander("⚙️ Editar e Detalhes"):
-            
             st.caption("AJUSTES RÁPIDOS")
             
-            # Callbacks de Edição
+            # Callback Específico para este item pelo índice 'i'
             def update_item(idx=i, key_id=item['id'], field=None, key_st=None):
                 st.session_state.lista_produtos[idx][field] = st.session_state[key_st]
 
@@ -337,21 +331,23 @@ if st.session_state.lista_produtos:
             fr2.markdown(f"#### {cor}[R$ {lucro_final:.2f}]")
             
             st.write("")
-            def deletar(idx=i): del st.session_state.lista_produtos[idx]
+            
+            # Função para deletar pelo índice correto
+            def deletar(idx_del=i):
+                del st.session_state.lista_produtos[idx_del]
+                
             st.button("Remover Item", key=f"del_{item['id']}", on_click=deletar)
 
     # Footer
     st.divider()
     col_d, col_c = st.columns(2)
     
-    # Export
     dados_csv = []
     for it in st.session_state.lista_produtos:
         pf = it['PrecoBase'] * (1 - it['DescontoPct']/100)
         _, fr = identificar_faixa_frete(pf)
         if _ == "manual": fr = it['FreteManual']
         luc = pf - (it['CMV'] + it['Extra'] + fr + (pf*(imposto_padrao+it['TaxaML'])/100)) + it['Bonus']
-        # ADICIONADO SKU NA EXPORTAÇÃO
         dados_csv.append({
             "MLB": it['MLB'], 
             "SKU": it.get('SKU', ''), 
