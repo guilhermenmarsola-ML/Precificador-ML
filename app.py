@@ -3,10 +3,10 @@ import pandas as pd
 import time
 import re
 
-# --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - Import V37", layout="centered", page_icon="💎")
+# --- 1. CONFIGURAÇÃO ---
+st.set_page_config(page_title="Precificador 2026 - Import Manual", layout="centered", page_icon="💎")
 
-# --- 2. ESTADO (MEMORY) ---
+# --- 2. ESTADO ---
 if 'lista_produtos' not in st.session_state:
     st.session_state.lista_produtos = []
 
@@ -14,102 +14,50 @@ def init_state(key, value):
     if key not in st.session_state:
         st.session_state[key] = value
 
-# Variáveis Temporárias
 init_state('n_mlb', '') 
 init_state('n_sku', '') 
 init_state('n_nome', '')
 init_state('n_cmv', 32.57)
 init_state('n_extra', 0.00)
-# Variáveis Fixas
 init_state('n_frete', 18.86)
 init_state('n_taxa', 16.5)
 init_state('n_erp', 85.44)
 init_state('n_merp', 20.0)
 
-# --- 3. DESIGN SYSTEM ---
+# --- 3. CSS (DESIGN SYSTEM V30) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
-
     .stApp { background-color: #FAFAFA; font-family: 'Inter', sans-serif; }
     
-    .input-card {
-        background: white;
-        border-radius: 20px;
-        padding: 24px;
-        box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05);
-        border: 1px solid #EFEFEF;
-        margin-bottom: 30px;
-    }
-
-    .feed-card {
-        background: white;
-        border-radius: 16px;
-        border: 1px solid #DBDBDB;
-        box-shadow: 0 2px 5px rgba(0,0,0,0.02);
-        margin-bottom: 15px;
-        overflow: hidden;
-    }
-    
-    .card-header {
-        padding: 15px 20px;
-        border-bottom: 1px solid #F0F0F0;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-    }
-    
+    .input-card { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #EFEFEF; margin-bottom: 30px; }
+    .feed-card { background: white; border-radius: 16px; border: 1px solid #DBDBDB; box-shadow: 0 2px 5px rgba(0,0,0,0.02); margin-bottom: 15px; overflow: hidden; }
+    .card-header { padding: 15px 20px; border-bottom: 1px solid #F0F0F0; display: flex; justify-content: space-between; align-items: center; }
     .card-body { padding: 20px; text-align: center; }
-
     .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
     .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
-    
-    .price-hero { 
-        font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0;
-    }
-    
+    .price-hero { font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0; }
     .pill { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; display: inline-block; }
     .pill-green { background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5; }
     .pill-yellow { background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D; }
     .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
-
-    div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input {
-        background-color: #FAFAFA !important;
-        border: 1px solid #E5E5E5 !important;
-        color: #333 !important;
-        border-radius: 8px !important;
-    }
+    div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input { background-color: #FAFAFA !important; border: 1px solid #E5E5E5 !important; color: #333 !important; border-radius: 8px !important; }
+    div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border-radius: 10px; height: 50px; border: none; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
     
-    div.stButton > button[kind="primary"] {
-        background: linear-gradient(135deg, #2563EB, #1D4ED8);
-        color: white;
-        border-radius: 10px;
-        height: 50px;
-        border: none;
-        font-weight: 600;
-        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
-    }
-    
-    /* Selectbox Style */
-    div[data-testid="stSelectbox"] > div > div {
-        background-color: #FAFAFA;
-        border-radius: 8px;
-    }
+    /* Import Box */
+    .import-debug { background-color: #f1f5f9; padding: 10px; border-radius: 8px; font-size: 12px; border: 1px dashed #cbd5e1; margin-bottom: 10px; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 4. FUNÇÕES AUXILIARES ---
+# --- 4. FUNÇÕES ---
 def limpar_valor_dinheiro(valor):
     if pd.isna(valor) or valor == "" or valor == "-": return 0.0
     if isinstance(valor, (int, float)): return float(valor)
     valor_str = str(valor).strip()
     valor_str = re.sub(r'[^\d,\.-]', '', valor_str)
     if not valor_str: return 0.0
-    # Lógica Brasileira: 1.200,50
-    if ',' in valor_str and '.' in valor_str: 
-        valor_str = valor_str.replace('.', '').replace(',', '.') 
-    elif ',' in valor_str: 
-        valor_str = valor_str.replace(',', '.')
+    if ',' in valor_str and '.' in valor_str: valor_str = valor_str.replace('.', '').replace(',', '.') 
+    elif ',' in valor_str: valor_str = valor_str.replace(',', '.')
     try: return float(valor_str)
     except: return 0.0
 
@@ -127,101 +75,96 @@ with st.sidebar:
         taxa_29_50 = st.number_input("29-50", value=6.50)
         taxa_50_79 = st.number_input("50-79", value=6.75)
         taxa_minima = st.number_input("Min", value=3.25)
-        
     st.divider()
     
-    # --- ÁREA DE IMPORTAÇÃO CORRIGIDA ---
+    # --- ÁREA DE IMPORTAÇÃO MANUAL ---
     st.markdown("### 📂 Importar Planilha")
-    uploaded_file = st.file_uploader("Arraste seu arquivo Excel", type=['xlsx'])
+    uploaded_file = st.file_uploader("Arraste seu Excel", type=['xlsx'])
     
     if uploaded_file is not None:
         try:
-            # 1. Carregar arquivo Excel (Para ler nomes das abas)
             xl = pd.ExcelFile(uploaded_file)
+            abas = xl.sheet_names
             
-            # Seletor de Aba
-            aba_selecionada = st.selectbox("Selecione a aba:", xl.sheet_names, index=0)
+            # 1. Escolha a Aba
+            aba_escolhida = st.selectbox("1. Qual aba usar?", abas, index=0)
             
-            if st.button("Processar Aba Selecionada", type="primary"):
-                # 2. Ler a aba crua
-                df_raw = xl.parse(aba_selecionada, header=None)
+            # 2. Escolha a Linha do Cabeçalho
+            st.write("2. Ajuste a linha até ver os nomes corretos (Anúncio, Produto, CMV):")
+            header_row = st.number_input("Linha do Cabeçalho", value=8, min_value=0, step=1)
+            
+            # 3. Preview
+            df_preview = xl.parse(aba_escolhida, header=header_row, nrows=3)
+            colunas_limpas = [str(c).strip() for c in df_preview.columns]
+            
+            st.markdown("<div class='import-debug'><b>Colunas lidas:</b><br>" + ", ".join(colunas_limpas[:5]) + "...</div>", unsafe_allow_html=True)
+            
+            # Validação Visual
+            if "Nome do Produto" in colunas_limpas or "Anúncio" in colunas_limpas or "Produto" in colunas_limpas:
+                st.success("✅ Cabeçalho parece correto!")
                 
-                # 3. SCANNER DE CABEÇALHO (Procura a linha correta)
-                header_index = -1
-                for i in range(min(20, len(df_raw))):
-                    row_txt = [str(x).strip().lower() for x in df_raw.iloc[i].values]
-                    # Procura palavras chaves da sua planilha
-                    if "nome do produto" in row_txt or "preço usado" in row_txt:
-                        header_index = i
-                        break
-                
-                if header_index == -1:
-                    st.error("Não encontrei a coluna 'Nome do Produto' nas primeiras 20 linhas.")
-                else:
-                    # 4. Define cabeçalho e limpa
-                    df = df_raw.copy()
-                    df.columns = df.iloc[header_index]
-                    df = df[header_index+1:].reset_index(drop=True)
+                if st.button("Processar Importação", type="primary"):
+                    # Ler arquivo completo
+                    df = xl.parse(aba_escolhida, header=header_row)
                     
-                    # Normaliza nomes das colunas (remove espaços e poe minusculo)
-                    df.columns = [str(c).strip() for c in df.columns]
+                    # Normalizar colunas (lower + strip)
+                    df.columns = [str(c).strip().lower() for c in df.columns]
                     
                     count = 0
                     for index, row in df.iterrows():
                         try:
-                            # Busca exata das colunas da sua planilha
-                            produto = str(row.get('Nome do Produto', row.get('Produto', '')))
-                            
-                            # Se não tem nome, pula
+                            # Busca colunas (flexível)
+                            def get_val(tags):
+                                for t in tags:
+                                    if t.lower() in df.columns: return row[t.lower()]
+                                return None
+
+                            produto = str(get_val(['Nome do Produto', 'Produto', 'Descrição']))
                             if not produto or produto == 'nan': continue
 
-                            mlb = str(row.get('Anúncio', ''))
-                            # Se MLB vier como float (ex: 2.2e+09), converte pra int depois str
-                            if 'e+' in mlb or '.' in mlb: 
-                                try: mlb = str(int(float(mlb)))
-                                except: pass
-
-                            cmv = limpar_valor_dinheiro(row.get('CMV', 0))
+                            mlb = str(get_val(['Anúncio', 'MLB', 'Codigo']))
+                            sku = str(get_val(['SKU', 'Ref'])) # Se não tiver, vem None
                             
-                            # Preço Usado é o preço base de venda
-                            preco_base = limpar_valor_dinheiro(row.get('Preço Usado', 0))
+                            cmv = limpar_valor_dinheiro(get_val(['CMV', 'Custo']))
+                            preco_base = limpar_valor_dinheiro(get_val(['Preço Usado', 'Preço', 'Preço Venda']))
                             
-                            frete_manual = limpar_valor_dinheiro(row.get('Frete do anúncio', 0))
-                            if frete_manual == 0: frete_manual = 18.86
+                            frete = limpar_valor_dinheiro(get_val(['Frete do anúncio', 'Frete']))
+                            if frete == 0: frete = 18.86
                             
-                            taxa_ml_item = limpar_valor_dinheiro(row.get('TX ML', 0))
-                            if taxa_ml_item == 0: taxa_ml_item = 16.5
+                            tx_ml = limpar_valor_dinheiro(get_val(['TX ML', 'Taxa ML', 'Comissão']))
+                            if tx_ml == 0: tx_ml = 16.5
                             
-                            desc_pct = limpar_valor_dinheiro(row.get('% de Desconto', 0))
-                            bonus = limpar_valor_dinheiro(row.get('Bônus ML', 0))
+                            desc = limpar_valor_dinheiro(get_val(['% de Desconto', 'Desconto']))
+                            bonus = limpar_valor_dinheiro(get_val(['Bônus ML', 'Bonus', 'Rebate']))
 
                             novo_item = {
                                 "id": int(time.time() * 1000) + index,
-                                "MLB": mlb,
-                                "SKU": "", # Sua planilha nao tem coluna explicita de SKU, deixamos vazio
+                                "MLB": mlb if mlb != 'nan' else '',
+                                "SKU": sku if sku and sku != 'nan' else '',
                                 "Produto": produto,
                                 "CMV": cmv,
-                                "FreteManual": frete_manual,
-                                "TaxaML": taxa_ml_item,
+                                "FreteManual": frete,
+                                "TaxaML": tx_ml,
                                 "Extra": 0.0,
-                                "PrecoERP": 0.0,
-                                "MargemERP": 0.0,
+                                "PrecoERP": 0.0, "MargemERP": 0.0,
                                 "PrecoBase": preco_base,
-                                "DescontoPct": desc_pct,
-                                "Bonus": bonus,
+                                "DescontoPct": desc,
+                                "Bonus": bonus
                             }
                             st.session_state.lista_produtos.append(novo_item)
                             count += 1
                         except: continue
                     
-                    st.success(f"{count} produtos da aba '{aba_selecionada}' importados!")
-                    time.sleep(1.5)
+                    st.toast(f"{count} importados!", icon="🚀")
+                    time.sleep(1)
                     reiniciar_app()
-
+            else:
+                st.warning("Ajuste o número da linha acima até ver 'Nome do Produto'.")
+                
         except Exception as e:
-            st.error(f"Erro ao ler arquivo: {e}")
+            st.error(f"Erro: {e}")
 
-# --- 5. LÓGICA DE NEGÓCIO ---
+# --- 5. LÓGICA ---
 def identificar_faixa_frete(preco):
     if preco >= 79.00: return "manual", 0.0
     elif 50.00 <= preco < 79.00: return "Tab. 50-79", taxa_50_79
@@ -233,10 +176,8 @@ def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, i
     custos_fixos_1 = custo_base + frete_manual
     divisor = 1 - ((taxa_ml_pct + imposto_pct) / 100)
     if divisor <= 0: return 0.0, "Erro"
-    
     preco_est_1 = (custos_fixos_1 + lucro_alvo_reais) / divisor
     if preco_est_1 >= 79.00: return preco_est_1, "Frete Manual"
-    
     for taxa, nome, p_min, p_max in [
         (taxa_50_79, "Tab. 50-79", 50, 79),
         (taxa_29_50, "Tab. 29-50", 29, 50),
@@ -355,7 +296,6 @@ if st.session_state.lista_produtos:
         txt_lucro_reais = f"R$ {lucro_final:.2f}"
         if lucro_final > 0: txt_lucro_reais = "+ " + txt_lucro_reais
 
-        # --- CARD ---
         sku_display = item.get('SKU', '-')
         if not sku_display: sku_display = ""
         
@@ -435,7 +375,6 @@ if st.session_state.lista_produtos:
             
             st.write("")
             
-            # --- CAIXA DE DESTAQUE DO RESULTADO ---
             st.markdown(f"""
             <div style="{box_style} padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
                 <span style="font-weight: 700; font-size: 14px;">LUCRO LÍQUIDO</span>
