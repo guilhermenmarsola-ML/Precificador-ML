@@ -3,7 +3,7 @@ import pandas as pd
 import time
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - Import Edition", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - Import Fix", layout="centered", page_icon="💎")
 
 # --- 2. ESTADO (MEMORY) ---
 if 'lista_produtos' not in st.session_state:
@@ -32,7 +32,6 @@ st.markdown("""
 
     .stApp { background-color: #FAFAFA; font-family: 'Inter', sans-serif; }
     
-    /* Input Card */
     .input-card {
         background: white;
         border-radius: 20px;
@@ -42,7 +41,6 @@ st.markdown("""
         margin-bottom: 30px;
     }
 
-    /* Feed Card */
     .feed-card {
         background: white;
         border-radius: 16px;
@@ -60,29 +58,20 @@ st.markdown("""
         align-items: center;
     }
     
-    .card-body {
-        padding: 20px;
-        text-align: center;
-    }
+    .card-body { padding: 20px; text-align: center; }
 
     .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
     .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
     
     .price-hero { 
-        font-size: 32px; 
-        font-weight: 800; 
-        letter-spacing: -1px; 
-        color: #262626;
-        margin: 5px 0;
+        font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0;
     }
     
-    /* PILLS (TAGS) */
     .pill { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; display: inline-block; }
     .pill-green { background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5; }
     .pill-yellow { background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D; }
     .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
 
-    /* Inputs */
     div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input {
         background-color: #FAFAFA !important;
         border: 1px solid #E5E5E5 !important;
@@ -90,7 +79,6 @@ st.markdown("""
         border-radius: 8px !important;
     }
     
-    /* Botão */
     div.stButton > button[kind="primary"] {
         background: linear-gradient(135deg, #2563EB, #1D4ED8);
         color: white;
@@ -115,53 +103,63 @@ with st.sidebar:
         
     st.divider()
     
-    # --- ÁREA DE IMPORTAÇÃO ---
+    # --- ÁREA DE IMPORTAÇÃO (AJUSTADA) ---
     st.markdown("### 📂 Importar Planilha")
+    
     uploaded_file = st.file_uploader("Arraste seu Excel/CSV", type=['xlsx', 'csv'])
     
+    # Seletor de Linha do Cabeçalho
+    header_row = st.number_input("Em qual linha começa o cabeçalho?", value=0, min_value=0, help="Se sua planilha tem títulos antes das colunas, aumente este número.")
+    
     if uploaded_file is not None:
-        if st.button("Processar Importação", type="primary"):
-            try:
-                # Ler o arquivo
-                if uploaded_file.name.endswith('.csv'):
-                    df_upload = pd.read_csv(uploaded_file)
-                else:
-                    df_upload = pd.read_excel(uploaded_file)
-                
-                # Contador
+        try:
+            # Ler arquivo com a linha de cabeçalho correta
+            if uploaded_file.name.endswith('.csv'):
+                df_upload = pd.read_csv(uploaded_file, header=header_row)
+            else:
+                df_upload = pd.read_excel(uploaded_file, header=header_row)
+            
+            st.caption("🔍 Prévia das colunas encontradas:")
+            st.write(list(df_upload.columns)[:5]) # Mostra as 5 primeiras colunas para conferência
+            
+            if st.button("Processar Importação", type="primary"):
                 count = 0
-                
-                # Iterar e adicionar
                 for index, row in df_upload.iterrows():
-                    # Mapeamento Inteligente (Tenta achar as colunas ou usa padrão)
-                    # Adapte os nomes abaixo conforme o cabeçalho exato da sua planilha
+                    # Normaliza nomes das colunas (remove espaços extras)
+                    row = row.rename(index=lambda x: x.strip() if isinstance(x, str) else x)
                     
-                    mlb = str(row.get('Anúncio', row.get('MLB', '')))
-                    produto = str(row.get('Nome do Produto', row.get('Produto', 'Produto Importado')))
+                    # Busca flexível (Tenta vários nomes possíveis)
+                    mlb = str(row.get('Anúncio', row.get('MLB', row.get('Código', ''))))
+                    sku = str(row.get('SKU', row.get('Referencia', '')))
+                    produto = str(row.get('Nome do Produto', row.get('Produto', 'Item Importado')))
                     
-                    # Tratamento de valores numéricos (converte string pra float se precisar)
-                    def get_float(val, default=0.0):
-                        try: return float(val)
-                        except: return default
+                    def get_val(keys, default=0.0):
+                        for k in keys:
+                            if k in row:
+                                try: return float(row[k])
+                                except: pass
+                        return default
 
-                    cmv = get_float(row.get('CMV', 0))
-                    preco_base = get_float(row.get('Preço Usado', row.get('Preço', 0)))
-                    frete_manual = get_float(row.get('Frete do anúncio', row.get('Frete', 18.86)))
-                    taxa_ml_item = get_float(row.get('TX ML', row.get('Taxa ML', 16.5)))
-                    desc_pct = get_float(row.get('% de Desconto', row.get('Desconto', 0)))
-                    bonus = get_float(row.get('Bônus ML', row.get('Bonus', 0)))
+                    cmv = get_val(['CMV', 'Custo', 'Custo Produto'])
+                    preco_base = get_val(['Preço Usado', 'Preço', 'Preço Venda'])
+                    frete_manual = get_val(['Frete do anúncio', 'Frete', 'Frete Manual'], 18.86)
+                    taxa_ml_item = get_val(['TX ML', 'Taxa ML', 'Comissão'], 16.5)
+                    desc_pct = get_val(['% de Desconto', 'Desconto'], 0)
+                    bonus = get_val(['Bônus ML', 'Bonus', 'Rebate'], 0)
                     
-                    # Cria o item no formato do app
+                    # Se não tiver nome, pula
+                    if not produto or produto == 'nan': continue
+
                     novo_item = {
-                        "id": int(time.time() * 1000) + index, # ID único
+                        "id": int(time.time() * 1000) + index,
                         "MLB": mlb,
-                        "SKU": "", # Se tiver coluna SKU na planilha, adicione: row.get('SKU', '')
+                        "SKU": sku,
                         "Produto": produto,
                         "CMV": cmv,
                         "FreteManual": frete_manual if frete_manual > 0 else 18.86,
                         "TaxaML": taxa_ml_item if taxa_ml_item > 0 else 16.5,
                         "Extra": 0.0,
-                        "PrecoERP": 0.0, # Valor padrão pois a planilha pode não ter
+                        "PrecoERP": 0.0,
                         "MargemERP": 0.0,
                         "PrecoBase": preco_base,
                         "DescontoPct": desc_pct,
@@ -170,12 +168,12 @@ with st.sidebar:
                     st.session_state.lista_produtos.append(novo_item)
                     count += 1
                 
-                st.success(f"{count} produtos importados com sucesso!")
-                time.sleep(1)
+                st.success(f"{count} produtos importados!")
+                time.sleep(1.5)
                 st.experimental_rerun()
                 
-            except Exception as e:
-                st.error(f"Erro ao ler planilha: {e}")
+        except Exception as e:
+            st.error(f"Erro: {e}")
 
 # --- 5. LÓGICA ---
 def identificar_faixa_frete(preco):
@@ -251,7 +249,7 @@ col_t, col_c = st.columns([3, 1])
 col_t.title("Precificador")
 col_c.caption(f"{len(st.session_state.lista_produtos)} itens")
 
-# --- CARD DE INPUT ---
+# --- INPUT CARD ---
 st.markdown('<div class="input-card">', unsafe_allow_html=True)
 
 st.text_input("MLB (ID do Anúncio)", key="n_mlb", placeholder="Ex: MLB-12345678")
@@ -283,7 +281,7 @@ if st.session_state.lista_produtos:
     for i in range(total_itens - 1, -1, -1):
         item = st.session_state.lista_produtos[i]
         
-        # --- CÁLCULO VIVO ---
+        # --- CÁLCULO ---
         preco_base_calc = item['PrecoBase']
         desc_calc = item['DescontoPct']
         preco_final_calc = preco_base_calc * (1 - (desc_calc / 100))
@@ -297,13 +295,7 @@ if st.session_state.lista_produtos:
         lucro_final = preco_final_calc - custos_totais + item['Bonus']
         margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
         
-        # --- LÓGICA DE CORES (V30) ---
-        txt_pill = f"{margem_final:.1f}%" # Margem na Pill
-        
-        # Lucro no Texto
-        txt_lucro_reais = f"R$ {lucro_final:.2f}"
-        if lucro_final > 0: txt_lucro_reais = "+ " + txt_lucro_reais
-        
+        # --- CORES ---
         if margem_final < 8.0:
             pill_class = "pill-red"
             box_style = "background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2;"
@@ -313,6 +305,11 @@ if st.session_state.lista_produtos:
         else:
             pill_class = "pill-green"
             box_style = "background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5;"
+
+        # Textos
+        txt_pill = f"{margem_final:.1f}%"
+        txt_lucro_reais = f"R$ {lucro_final:.2f}"
+        if lucro_final > 0: txt_lucro_reais = "+ " + txt_lucro_reais
 
         # --- CARD ---
         sku_display = item.get('SKU', '-')
@@ -393,7 +390,7 @@ if st.session_state.lista_produtos:
             
             st.write("")
             
-            # --- CAIXA DE RESULTADO ---
+            # BOX FINAL DO LUCRO
             st.markdown(f"""
             <div style="{box_style} padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
                 <span style="font-weight: 700; font-size: 14px;">LUCRO LÍQUIDO</span>
