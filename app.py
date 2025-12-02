@@ -2,161 +2,123 @@ import streamlit as st
 import pandas as pd
 import time
 
-# --- 1. CONFIGURAÇÃO DO APP (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026", layout="centered", page_icon="✨")
+# --- 1. CONFIGURAÇÃO (APP SHELL) ---
+st.set_page_config(page_title="Precificador 2026 - Final", layout="centered", page_icon="💎")
 
-# --- 2. GERENCIAMENTO DE ESTADO (MEMORY) ---
+# --- 2. ESTADO (MEMORY) ---
 if 'lista_produtos' not in st.session_state:
     st.session_state.lista_produtos = []
 
-# Inicializa variáveis
 def init_state(key, value):
     if key not in st.session_state:
         st.session_state[key] = value
 
-# Variáveis Temporárias (Cadastro)
+# Variáveis Temporárias
 init_state('n_mlb', '')
 init_state('n_nome', '')
 init_state('n_cmv', 32.57)
 init_state('n_extra', 0.00)
-# Variáveis Persistentes (Config)
+# Variáveis Fixas
 init_state('n_frete', 18.86)
 init_state('n_taxa', 16.5)
 init_state('n_erp', 85.44)
 init_state('n_merp', 20.0)
 
-# --- 3. DESIGN SYSTEM (INSTAGRAM STYLE) ---
+# --- 3. DESIGN SYSTEM (CSS HÍBRIDO) ---
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
 
-    /* Reset Geral */
-    .stApp {
-        background-color: #FAFAFA; /* Fundo Instagram */
-        font-family: 'Inter', sans-serif;
-    }
+    /* Fundo Geral */
+    .stApp { background-color: #FAFAFA; font-family: 'Inter', sans-serif; }
     
-    /* Remove Padding excessivo do Streamlit */
-    .block-container {
-        padding-top: 2rem;
-        padding-bottom: 5rem;
-        max-width: 700px; /* Largura de App Mobile */
-    }
-
-    /* CARD DE INPUT (Novo Post) */
+    /* Input Card (Novo Post Style) */
     .input-card {
         background: white;
         border-radius: 20px;
         padding: 24px;
-        box-shadow: 0 10px 40px -10px rgba(0,0,0,0.08);
-        margin-bottom: 30px;
+        box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05);
         border: 1px solid #EFEFEF;
+        margin-bottom: 30px;
     }
 
-    /* CARD DO PRODUTO (O "Post") */
+    /* Feed Card (O Produto) */
     .feed-card {
         background: white;
         border-radius: 16px;
-        padding: 0;
-        margin-bottom: 20px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.03);
         border: 1px solid #DBDBDB;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.02);
+        margin-bottom: 15px;
         overflow: hidden;
     }
     
     .card-header {
-        padding: 16px;
+        padding: 15px 20px;
+        border-bottom: 1px solid #F0F0F0;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        border-bottom: 1px solid #FAFAFA;
     }
     
     .card-body {
         padding: 20px;
         text-align: center;
     }
-    
-    .card-footer {
-        background-color: #FAFAFA;
-        padding: 12px;
-        border-top: 1px solid #EFEFEF;
-    }
 
-    /* TIPOGRAFIA */
-    .sku-tag { font-size: 11px; color: #8E8E8E; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
-    .prod-title { font-size: 16px; font-weight: 600; color: #262626; margin-top: 4px; }
+    /* Tipografia Visual */
+    .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+    .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
     
-    .price-hero { font-size: 32px; font-weight: 800; letter-spacing: -1px; margin: 10px 0; }
-    .profit-pill { 
-        font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 20px; 
-        display: inline-block;
+    .price-hero { 
+        font-size: 32px; 
+        font-weight: 800; 
+        letter-spacing: -1px; 
+        color: #262626;
+        margin: 5px 0;
     }
-    .pill-green { background-color: #E3F9E5; color: #108A29; }
-    .pill-red { background-color: #FFEBEB; color: #E02424; }
-
-    /* DRE VISUAL (Estilo Recibo Apple Wallet) */
-    .wallet-row {
-        display: flex;
-        justify-content: space-between;
-        padding: 8px 0;
-        font-size: 14px;
-        color: #555;
-        border-bottom: 1px dashed #eee;
-    }
-    .wallet-total {
-        display: flex;
-        justify-content: space-between;
-        padding-top: 12px;
-        margin-top: 5px;
+    
+    .pill {
+        padding: 6px 12px;
+        border-radius: 20px;
+        font-size: 13px;
         font-weight: 700;
-        font-size: 16px;
-        color: #000;
-        border-top: 2px solid #000;
     }
-
-    /* BOTÕES */
-    div.stButton > button {
-        border-radius: 12px;
-        font-weight: 600;
-        border: none;
-        transition: transform 0.1s;
-    }
-    div.stButton > button:active { transform: scale(0.98); }
-    
-    /* Botão Principal (Gradiente Instagram/Moderno) */
-    div.stButton > button[kind="primary"] {
-        background: linear-gradient(45deg, #405DE6, #5851DB, #833AB4);
-        color: white;
-        height: 50px;
-        font-size: 16px;
-    }
+    .pill-green { background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5; }
+    .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
 
     /* Inputs Limpos */
     div[data-testid="stNumberInput"] input {
-        background-color: #FAFAFA;
-        border: 1px solid #DBDBDB;
-        border-radius: 8px;
-        color: #262626;
+        background-color: #FAFAFA !important;
+        border: 1px solid #E5E5E5 !important;
+        color: #333 !important;
+        border-radius: 8px !important;
+    }
+    
+    /* Botão Principal */
+    div.stButton > button[kind="primary"] {
+        background: linear-gradient(135deg, #2563EB, #1D4ED8);
+        color: white;
+        border-radius: 10px;
+        height: 50px;
+        border: none;
+        font-weight: 600;
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
     }
 </style>
 """, unsafe_allow_html=True)
 
-# --- 4. SIDEBAR (CONFIGURAÇÕES) ---
+# --- 4. SIDEBAR ---
 with st.sidebar:
-    st.image("https://cdn-icons-png.flaticon.com/512/3135/3135715.png", width=50)
-    st.markdown("### Ajustes do Sistema")
+    st.header("Ajustes")
+    imposto_padrao = st.number_input("Impostos (%)", value=27.0, step=0.5)
     
-    with st.expander("📊 Taxas & Impostos", expanded=True):
-        imposto_padrao = st.number_input("Impostos (%)", value=27.0, step=0.5)
-    
-    with st.expander("🚚 Tabela de Frete (<79)", expanded=True):
-        taxa_12_29 = st.number_input("Faixa 12-29", value=6.25)
-        taxa_29_50 = st.number_input("Faixa 29-50", value=6.50)
-        taxa_50_79 = st.number_input("Faixa 50-79", value=6.75)
-        taxa_minima = st.number_input("Mínimo", value=3.25)
+    with st.expander("Tabela Frete ML (<79)", expanded=True):
+        taxa_12_29 = st.number_input("12-29", value=6.25)
+        taxa_29_50 = st.number_input("29-50", value=6.50)
+        taxa_50_79 = st.number_input("50-79", value=6.75)
+        taxa_minima = st.number_input("Min", value=3.25)
 
-# --- 5. LÓGICA DE NEGÓCIO ---
+# --- 5. LÓGICA ---
 def identificar_faixa_frete(preco):
     if preco >= 79.00: return "manual", 0.0
     elif 50.00 <= preco < 79.00: return "Tab. 50-79", taxa_50_79
@@ -183,13 +145,12 @@ def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, i
         
     return preco_est_1, "Frete Manual"
 
-# --- 6. CALLBACKS (LÓGICA DOS BOTÕES) ---
+# --- 6. CALLBACK (ADICIONAR) ---
 def adicionar_produto_action():
     if not st.session_state.n_nome:
-        st.toast("⚠️ Digite o nome do produto!")
+        st.toast("Nome obrigatório!", icon="⚠️")
         return
 
-    # Calcula Sugestão
     lucro_alvo = st.session_state.n_erp * (st.session_state.n_merp / 100)
     preco_sug, _ = calcular_preco_sugerido_reverso(
         st.session_state.n_cmv + st.session_state.n_extra,
@@ -214,9 +175,9 @@ def adicionar_produto_action():
         "Bonus": 0.0,
     }
     st.session_state.lista_produtos.append(novo_item)
-    st.toast("Adicionado ao Feed!", icon="🎉")
+    st.toast("Salvo!", icon="✅")
 
-    # Limpa APENAS dados do produto, mantém configurações
+    # Limpeza
     st.session_state.n_mlb = ""
     st.session_state.n_nome = ""
     st.session_state.n_cmv = 0.00
@@ -226,28 +187,27 @@ def adicionar_produto_action():
 # 7. INTERFACE PRINCIPAL
 # ==============================================================================
 
-# Cabeçalho Limpo
-col_h1, col_h2 = st.columns([3, 1])
-col_h1.title("Precificador")
-col_h2.markdown(f"<div style='text-align:right; color:#8E8E8E; padding-top:15px;'>{len(st.session_state.lista_produtos)} itens</div>", unsafe_allow_html=True)
+# Cabeçalho
+col_t, col_c = st.columns([3, 1])
+col_t.title("Precificador")
+col_c.caption(f"{len(st.session_state.lista_produtos)} itens")
 
-# --- INPUT CARD (O CRIADOR DE POSTS) ---
+# --- CARD DE INPUT (CLEAN) ---
 st.markdown('<div class="input-card">', unsafe_allow_html=True)
 
-# Linha 1: Identificação
+# Linha 1
 c1, c2 = st.columns([1, 2])
-c1.text_input("Código", key="n_mlb", placeholder="MLB...")
-c2.text_input("Produto", key="n_nome", placeholder="O que vamos vender?")
+c1.text_input("Código", key="n_mlb", placeholder="SKU")
+c2.text_input("Produto", key="n_nome", placeholder="Nome do item")
 
-# Linha 2: Custos
+# Linha 2
 c3, c4 = st.columns(2)
 c3.number_input("Custo (CMV)", step=0.01, format="%.2f", key="n_cmv")
 c4.number_input("Frete (>79)", step=0.01, format="%.2f", key="n_frete")
 
-# Divider Minimalista
-st.markdown("<div style='height: 1px; background-color: #EFEFEF; margin: 15px 0;'></div>", unsafe_allow_html=True)
+st.markdown("<hr style='margin: 15px 0; border-color: #eee;'>", unsafe_allow_html=True)
 
-# Linha 3: Estratégia (Labels menores)
+# Linha 3
 c5, c6, c7 = st.columns(3)
 c5.number_input("Comissão %", step=0.5, format="%.1f", key="n_taxa")
 c6.number_input("Preço ERP", step=0.01, format="%.2f", key="n_erp")
@@ -260,10 +220,10 @@ st.markdown('</div>', unsafe_allow_html=True)
 # --- FEED DE PRODUTOS ---
 if st.session_state.lista_produtos:
     
-    # Loop Reverso (Mais novo em cima)
+    # Loop Reverso
     for i, item in enumerate(reversed(st.session_state.lista_produtos)):
         
-        # --- MOTOR DE CÁLCULO (LIVE) ---
+        # --- CÁLCULO VIVO ---
         preco_base_calc = item['PrecoBase']
         desc_calc = item['DescontoPct']
         preco_final_calc = preco_base_calc * (1 - (desc_calc / 100))
@@ -277,44 +237,41 @@ if st.session_state.lista_produtos:
         lucro_final = preco_final_calc - custos_totais + item['Bonus']
         margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
         
-        # Cores Dinâmicas
-        cor_valor = "#262626"
-        classe_pill = "pill-green"
-        txt_lucro = f"+ R$ {lucro_final:.2f}"
+        # Variáveis Visuais
+        pill_class = "pill-green" if lucro_final > 0 else "pill-red"
+        txt_lucro = f"+ R$ {lucro_final:.2f}" if lucro_final > 0 else f"- R$ {abs(lucro_final):.2f}"
         
-        if lucro_final < 0:
-            cor_valor = "#E02424"
-            classe_pill = "pill-red"
-            txt_lucro = f"- R$ {abs(lucro_final):.2f}"
-
-        # --- ESTRUTURA DO CARD ---
+        # --- ESTRUTURA DO CARD (MISTURA HTML + NATIVO) ---
+        
+        # 1. Cabeçalho Visual (HTML Puro - Seguro)
         st.markdown(f"""
         <div class="feed-card">
             <div class="card-header">
                 <div>
-                    <div class="sku-tag">{item['MLB']}</div>
-                    <div class="prod-title">{item['Produto']}</div>
+                    <div class="sku-text">{item['MLB']}</div>
+                    <div class="title-text">{item['Produto']}</div>
                 </div>
-                <div class="profit-pill {classe_pill}">{txt_lucro}</div>
+                <div class="{pill_class} pill">{txt_lucro}</div>
             </div>
             <div class="card-body">
-                <div style="font-size: 12px; color: #8E8E8E; font-weight: 500;">PREÇO DE VENDA</div>
-                <div class="price-hero" style="color: {cor_valor}">R$ {preco_final_calc:.2f}</div>
-                <div style="font-size: 12px; color: #8E8E8E;">Margem Líquida: <b>{margem_final:.1f}%</b></div>
+                <div style="font-size: 11px; color:#888; font-weight:600;">PREÇO DE VENDA</div>
+                <div class="price-hero">R$ {preco_final_calc:.2f}</div>
+                <div style="font-size: 13px; color:#555;">Margem Líquida: <b>{margem_final:.1f}%</b></div>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
-        # --- ÁREA DE AÇÃO (EXPANDER) ---
-        # Não colocamos dentro do HTML para que os Inputs do Streamlit funcionem
-        with st.expander("⚙️ Editar & Detalhes Financeiros"):
+        # 2. Área de Edição (Expander Nativo do Streamlit)
+        # IMPORTANTE: Usamos componentes nativos aqui para evitar qualquer erro de "código vazando"
+        with st.expander("⚙️ Editar e Detalhes"):
             
-            # 1. Inputs de Edição
-            ec1, ec2, ec3 = st.columns(3)
+            st.caption("AJUSTES RÁPIDOS")
             
+            # Callbacks de Edição
             def update_item(idx=i, key_id=item['id'], field=None, key_st=None):
                 st.session_state.lista_produtos[idx][field] = st.session_state[key_st]
 
+            ec1, ec2, ec3 = st.columns(3)
             ec1.number_input("Preço Tabela", value=float(item['PrecoBase']), step=0.5, key=f"pb_{item['id']}", 
                              on_change=update_item, args=(i, item['id'], 'PrecoBase', f"pb_{item['id']}"))
             
@@ -324,47 +281,68 @@ if st.session_state.lista_produtos:
             ec3.number_input("Rebate (R$)", value=float(item['Bonus']), step=0.01, key=f"bn_{item['id']}", 
                              on_change=update_item, args=(i, item['id'], 'Bonus', f"bn_{item['id']}"))
             
-            st.write("")
+            st.divider()
             
-            # 2. DRE VISUAL (HTML Puro para não quebrar layout)
-            st.markdown("##### 📄 Extrato Financeiro")
+            # --- DRE NATIVA (BLINDADA CONTRA ERROS) ---
+            st.caption("EXTRATO FINANCEIRO")
             
-            dre_html = f"""
-            <div style="background-color: #FAFAFA; padding: 15px; border-radius: 12px;">
-                <div class="wallet-row"><span>(+) Preço Tabela</span> <span>R$ {preco_base_calc:.2f}</span></div>
-                <div class="wallet-row" style="color: #E02424;"><span>(-) Desconto ({desc_calc}%)</span> <span>- R$ {preco_base_calc - preco_final_calc:.2f}</span></div>
-                <div class="wallet-row" style="font-weight: 700; color: #000;"><span>(=) RECEITA BRUTA</span> <span>R$ {preco_final_calc:.2f}</span></div>
-                <div style="margin: 10px 0; border-bottom: 1px solid #eee;"></div>
-                <div class="wallet-row"><span>(-) Impostos ({imposto_padrao}%)</span> <span>- R$ {imposto_val:.2f}</span></div>
-                <div class="wallet-row"><span>(-) Comissão ML ({item['TaxaML']}%)</span> <span>- R$ {comissao_val:.2f}</span></div>
-                <div class="wallet-row"><span>(-) Frete ({nome_frete_real})</span> <span>- R$ {valor_frete_real:.2f}</span></div>
-                <div class="wallet-row"><span>(-) Custo CMV</span> <span>- R$ {item['CMV']:.2f}</span></div>
-                <div class="wallet-row" style="color: #108A29;"><span>(+) Rebate/Bônus</span> <span>+ R$ {item['Bonus']:.2f}</span></div>
-                
-                <div class="wallet-total" style="color: {'#108A29' if lucro_final > 0 else '#E02424'}; border-color: {'#108A29' if lucro_final > 0 else '#E02424'};">
-                    <span>LUCRO LÍQUIDO</span>
-                    <span>R$ {lucro_final:.2f}</span>
-                </div>
-            </div>
-            """
-            st.markdown(dre_html, unsafe_allow_html=True)
+            # Usamos st.columns para alinhar (Impossível dar erro visual de HTML)
+            r1, r2 = st.columns([3, 1])
+            r1.write("(+) Preço Tabela")
+            r2.write(f"R$ {preco_base_calc:.2f}")
             
-            # Botão Excluir (Discreto)
+            if desc_calc > 0:
+                r1, r2 = st.columns([3, 1])
+                r1.markdown(f":red[(-) Desconto ({desc_calc}%) ]")
+                r2.markdown(f":red[- R$ {preco_base_calc - preco_final_calc:.2f}]")
+            
+            st.markdown("---")
+            
+            r1, r2 = st.columns([3, 1])
+            r1.markdown("**(=) RECEITA BRUTA**")
+            r2.markdown(f"**R$ {preco_final_calc:.2f}**")
+            
+            st.write("") # Espaço
+            
+            # Lista de Custos Nativos
+            custos = [
+                (f"Impostos ({imposto_padrao}%)", imposto_val),
+                (f"Comissão ({item['TaxaML']}%)", comissao_val),
+                (f"Frete ({nome_frete_real})", valor_frete_real),
+                ("Custo CMV", item['CMV']),
+                ("Extras", item['Extra'])
+            ]
+            
+            for lbl, val in custos:
+                c_lbl, c_val = st.columns([3, 1])
+                c_lbl.caption(f"(-) {lbl}")
+                c_val.caption(f"- R$ {val:.2f}")
+            
+            if item['Bonus'] > 0:
+                st.write("")
+                r1, r2 = st.columns([3, 1])
+                r1.markdown(":green[(+) Rebate / Bônus]")
+                r2.markdown(f":green[+ R$ {item['Bonus']:.2f}]")
+            
+            st.divider()
+            
+            # Resultado Final Nativo
+            fr1, fr2 = st.columns([3, 1])
+            fr1.markdown("#### RESULTADO LÍQUIDO")
+            cor = ":green" if lucro_final > 0 else ":red"
+            fr2.markdown(f"#### {cor}[R$ {lucro_final:.2f}]")
+            
             st.write("")
             def deletar(idx=i): del st.session_state.lista_produtos[idx]
-            st.button("🗑️ Remover este item", key=f"btn_del_{item['id']}", on_click=deletar, help="Apagar da lista")
+            st.button("Remover Item", key=f"del_{item['id']}", on_click=deletar)
 
-        # Espaçador
-        st.write("") 
-
-    # --- FOOTER ---
+    # Footer
     st.divider()
     col_d, col_c = st.columns(2)
     
-    # Exportação
+    # Export
     dados_csv = []
     for it in st.session_state.lista_produtos:
-        # Recalcula para CSV
         pf = it['PrecoBase'] * (1 - it['DescontoPct']/100)
         _, fr = identificar_faixa_frete(pf)
         if _ == "manual": fr = it['FreteManual']
@@ -377,14 +355,12 @@ if st.session_state.lista_produtos:
     col_d.download_button("📥 Baixar Excel", csv, "precificacao_2026.csv", "text/csv", use_container_width=True)
     
     def limpar_tudo(): st.session_state.lista_produtos = []
-    col_c.button("Limpar Tudo", on_click=limpar_tudo, use_container_width=True)
+    col_c.button("🗑️ Limpar Tudo", on_click=limpar_tudo, use_container_width=True)
 
 else:
-    # Estado Vazio (Zero State) Bonito
     st.markdown("""
-    <div style="text-align: center; padding: 60px 20px; color: #8E8E8E;">
-        <div style="font-size: 40px; margin-bottom: 10px;">✨</div>
-        <h3 style="color: #262626;">Tudo pronto!</h3>
-        <p>Adicione seu primeiro produto acima para começar a precificar.</p>
+    <div style="text-align: center; color: #BBB; padding: 40px;">
+        <h3 style="color: #DDD;">Lista Vazia</h3>
+        Preencha os dados acima para começar.
     </div>
     """, unsafe_allow_html=True)
