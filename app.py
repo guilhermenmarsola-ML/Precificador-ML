@@ -3,7 +3,7 @@ import pandas as pd
 import time
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - V30 Invertida", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - Import Edition", layout="centered", page_icon="💎")
 
 # --- 2. ESTADO (MEMORY) ---
 if 'lista_produtos' not in st.session_state:
@@ -112,6 +112,70 @@ with st.sidebar:
         taxa_29_50 = st.number_input("29-50", value=6.50)
         taxa_50_79 = st.number_input("50-79", value=6.75)
         taxa_minima = st.number_input("Min", value=3.25)
+        
+    st.divider()
+    
+    # --- ÁREA DE IMPORTAÇÃO ---
+    st.markdown("### 📂 Importar Planilha")
+    uploaded_file = st.file_uploader("Arraste seu Excel/CSV", type=['xlsx', 'csv'])
+    
+    if uploaded_file is not None:
+        if st.button("Processar Importação", type="primary"):
+            try:
+                # Ler o arquivo
+                if uploaded_file.name.endswith('.csv'):
+                    df_upload = pd.read_csv(uploaded_file)
+                else:
+                    df_upload = pd.read_excel(uploaded_file)
+                
+                # Contador
+                count = 0
+                
+                # Iterar e adicionar
+                for index, row in df_upload.iterrows():
+                    # Mapeamento Inteligente (Tenta achar as colunas ou usa padrão)
+                    # Adapte os nomes abaixo conforme o cabeçalho exato da sua planilha
+                    
+                    mlb = str(row.get('Anúncio', row.get('MLB', '')))
+                    produto = str(row.get('Nome do Produto', row.get('Produto', 'Produto Importado')))
+                    
+                    # Tratamento de valores numéricos (converte string pra float se precisar)
+                    def get_float(val, default=0.0):
+                        try: return float(val)
+                        except: return default
+
+                    cmv = get_float(row.get('CMV', 0))
+                    preco_base = get_float(row.get('Preço Usado', row.get('Preço', 0)))
+                    frete_manual = get_float(row.get('Frete do anúncio', row.get('Frete', 18.86)))
+                    taxa_ml_item = get_float(row.get('TX ML', row.get('Taxa ML', 16.5)))
+                    desc_pct = get_float(row.get('% de Desconto', row.get('Desconto', 0)))
+                    bonus = get_float(row.get('Bônus ML', row.get('Bonus', 0)))
+                    
+                    # Cria o item no formato do app
+                    novo_item = {
+                        "id": int(time.time() * 1000) + index, # ID único
+                        "MLB": mlb,
+                        "SKU": "", # Se tiver coluna SKU na planilha, adicione: row.get('SKU', '')
+                        "Produto": produto,
+                        "CMV": cmv,
+                        "FreteManual": frete_manual if frete_manual > 0 else 18.86,
+                        "TaxaML": taxa_ml_item if taxa_ml_item > 0 else 16.5,
+                        "Extra": 0.0,
+                        "PrecoERP": 0.0, # Valor padrão pois a planilha pode não ter
+                        "MargemERP": 0.0,
+                        "PrecoBase": preco_base,
+                        "DescontoPct": desc_pct,
+                        "Bonus": bonus,
+                    }
+                    st.session_state.lista_produtos.append(novo_item)
+                    count += 1
+                
+                st.success(f"{count} produtos importados com sucesso!")
+                time.sleep(1)
+                st.experimental_rerun()
+                
+            except Exception as e:
+                st.error(f"Erro ao ler planilha: {e}")
 
 # --- 5. LÓGICA ---
 def identificar_faixa_frete(preco):
@@ -219,7 +283,7 @@ if st.session_state.lista_produtos:
     for i in range(total_itens - 1, -1, -1):
         item = st.session_state.lista_produtos[i]
         
-        # --- CÁLCULO ---
+        # --- CÁLCULO VIVO ---
         preco_base_calc = item['PrecoBase']
         desc_calc = item['DescontoPct']
         preco_final_calc = preco_base_calc * (1 - (desc_calc / 100))
@@ -233,7 +297,13 @@ if st.session_state.lista_produtos:
         lucro_final = preco_final_calc - custos_totais + item['Bonus']
         margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
         
-        # --- LÓGICA DE CORES ---
+        # --- LÓGICA DE CORES (V30) ---
+        txt_pill = f"{margem_final:.1f}%" # Margem na Pill
+        
+        # Lucro no Texto
+        txt_lucro_reais = f"R$ {lucro_final:.2f}"
+        if lucro_final > 0: txt_lucro_reais = "+ " + txt_lucro_reais
+        
         if margem_final < 8.0:
             pill_class = "pill-red"
             box_style = "background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2;"
@@ -243,14 +313,6 @@ if st.session_state.lista_produtos:
         else:
             pill_class = "pill-green"
             box_style = "background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5;"
-
-        # --- TEXTOS INVERTIDOS (PEDIDO ATUAL) ---
-        # No Topo (Pill): Margem em %
-        txt_pill = f"{margem_final:.1f}%"
-        
-        # No Corpo (Texto): Lucro em Reais
-        txt_lucro_reais = f"R$ {lucro_final:.2f}"
-        if lucro_final > 0: txt_lucro_reais = "+ " + txt_lucro_reais
 
         # --- CARD ---
         sku_display = item.get('SKU', '-')
@@ -331,7 +393,7 @@ if st.session_state.lista_produtos:
             
             st.write("")
             
-            # --- CAIXA DE DESTAQUE DO RESULTADO ---
+            # --- CAIXA DE RESULTADO ---
             st.markdown(f"""
             <div style="{box_style} padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
                 <span style="font-weight: 700; font-size: 14px;">LUCRO LÍQUIDO</span>
@@ -361,8 +423,7 @@ if st.session_state.lista_produtos:
             "SKU": it.get('SKU', ''), 
             "Produto": it['Produto'], 
             "Preco Final": pf, 
-            "Lucro": luc,
-            "Margem %": (luc/pf)*100 if pf else 0
+            "Lucro": luc
         })
         
     df_final = pd.DataFrame(dados_csv)
