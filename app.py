@@ -4,7 +4,7 @@ import time
 import re
 
 # --- 1. CONFIGURAÇÃO ---
-st.set_page_config(page_title="Precificador 2026 - Search V44", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - Spotlight", layout="centered", page_icon="💎")
 
 # --- 2. ESTADO ---
 if 'lista_produtos' not in st.session_state:
@@ -25,37 +25,62 @@ init_state('n_taxa', 16.5)
 init_state('n_erp', 85.44)
 init_state('n_merp', 20.0)
 
-# --- 3. DESIGN SYSTEM (APPLE/INSTAGRAM) ---
+# --- 3. DESIGN SYSTEM (SPOTLIGHT STYLE) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
     .stApp { background-color: #FAFAFA; font-family: 'Inter', sans-serif; }
     
+    /* Search Bar Wrapper */
+    .search-wrapper {
+        position: sticky;
+        top: 0;
+        z-index: 999;
+        background-color: #FAFAFA;
+        padding-bottom: 20px;
+        padding-top: 10px;
+    }
+
     /* Cards */
     .input-card { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #EFEFEF; margin-bottom: 30px; }
+    
     .feed-card { background: white; border-radius: 16px; border: 1px solid #DBDBDB; box-shadow: 0 2px 5px rgba(0,0,0,0.02); margin-bottom: 15px; overflow: hidden; }
     .card-header { padding: 15px 20px; border-bottom: 1px solid #F0F0F0; display: flex; justify-content: space-between; align-items: center; }
     .card-body { padding: 20px; text-align: center; }
+
+    /* Compact Result Card (Para a busca) */
+    .result-row {
+        background: white;
+        padding: 12px 15px;
+        border-bottom: 1px solid #eee;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: background 0.2s;
+    }
+    .result-row:hover { background-color: #F5F5F7; }
+    .result-container {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+        border: 1px solid #eee;
+        overflow: hidden;
+        margin-bottom: 20px;
+    }
 
     /* Tipografia */
     .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
     .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
     .price-hero { font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0; }
     
-    /* Pills */
     .pill { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; display: inline-block; }
     .pill-green { background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5; }
     .pill-yellow { background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D; }
     .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
 
-    /* Inputs e Botões */
+    /* Inputs */
     div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input { background-color: #FAFAFA !important; border: 1px solid #E5E5E5 !important; color: #333 !important; border-radius: 8px !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border-radius: 10px; height: 50px; border: none; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
-    
-    /* Search Bar Style */
-    div[data-testid="stTextInput"] > div > div {
-        border-radius: 12px;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -80,84 +105,70 @@ def reiniciar_app():
 with st.sidebar:
     st.header("Ajustes")
     imposto_padrao = st.number_input("Impostos (%)", value=27.0, step=0.5)
-    with st.expander("Tabela Frete ML (<79)", expanded=True):
+    with st.expander("Frete ML (<79)", expanded=True):
         taxa_12_29 = st.number_input("12-29", value=6.25)
         taxa_29_50 = st.number_input("29-50", value=6.50)
         taxa_50_79 = st.number_input("50-79", value=6.75)
         taxa_minima = st.number_input("Min", value=3.25)
     st.divider()
     
-    # --- ÁREA DE IMPORTAÇÃO ---
-    st.markdown("### 📂 Importar Planilha")
-    uploaded_file = st.file_uploader("Arraste seu Excel", type=['xlsx'])
+    st.markdown("### 📂 Importar")
+    uploaded_file = st.file_uploader("Excel/CSV", type=['xlsx', 'csv'])
     
-    if uploaded_file is not None:
+    if uploaded_file:
         try:
             xl = pd.ExcelFile(uploaded_file)
-            aba_selecionada = st.selectbox("1. Selecione a aba:", xl.sheet_names, index=0)
-            header_row = st.number_input("2. Linha do Cabeçalho (Teste 8 ou 9):", value=8, min_value=0, step=1)
+            aba = st.selectbox("Aba:", xl.sheet_names)
+            header = st.number_input("Linha Cabeçalho:", value=8, min_value=0)
             
-            df_preview = xl.parse(aba_selecionada, header=header_row, nrows=5)
-            cols_validas = [c for c in df_preview.columns if "Unnamed" not in str(c)]
-            
-            st.write("---")
-            st.caption("3. Mapeie as Colunas:")
-            
-            def get_idx(options, keywords):
-                if isinstance(keywords, str): keywords = [keywords]
-                for i, opt in enumerate(options):
-                    for k in keywords:
-                        if k.lower() in str(opt).lower(): return i
-                return 0
-
-            col_nome = st.selectbox("Nome do Produto", cols_validas, index=get_idx(cols_validas, ["Produto", "Nome", "Descrição"]))
-            col_mlb = st.selectbox("Código / MLB", cols_validas, index=get_idx(cols_validas, ["Anúncio", "MLB", "ID"]))
-            col_cmv = st.selectbox("Custo (CMV)", cols_validas, index=get_idx(cols_validas, ["CMV", "Custo"]))
-            col_erp = st.selectbox("Preço ERP / Base", cols_validas, index=get_idx(cols_validas, ["GRA", "ERP", "Base"]))
-            col_preco = st.selectbox("Preço Venda (Praticado)", cols_validas, index=get_idx(cols_validas, ["Preço Usado", "Venda", "Preço"]))
-            col_frete = st.selectbox("Frete Manual (>79)", cols_validas, index=get_idx(cols_validas, ["Frete do anúncio", "Frete"]))
-            col_taxa = st.selectbox("Taxa ML (%)", cols_validas, index=get_idx(cols_validas, ["TX ML", "Comissão"]))
-            col_desc = st.selectbox("Desconto (%)", cols_validas, index=get_idx(cols_validas, ["Desconto", "%"]))
-            col_bonus = st.selectbox("Bônus / Rebate", cols_validas, index=get_idx(cols_validas, ["Bônus", "Rebate"]))
-            
-            if st.button("✅ Importar", type="primary"):
-                df = xl.parse(aba_selecionada, header=header_row)
-                count = 0
-                for index, row in df.iterrows():
-                    try:
-                        produto = str(row[col_nome])
-                        if not produto or produto == 'nan': continue
-                        mlb = str(row[col_mlb])
-                        cmv = limpar_valor_dinheiro(row[col_cmv])
-                        preco_erp = limpar_valor_dinheiro(row[col_erp])
-                        preco_base = limpar_valor_dinheiro(row[col_preco])
-                        frete = limpar_valor_dinheiro(row[col_frete])
-                        tx_ml = limpar_valor_dinheiro(row[col_taxa])
-                        desc = limpar_valor_dinheiro(row[col_desc])
-                        bonus = limpar_valor_dinheiro(row[col_bonus])
-                        
-                        if 0 < desc < 1.0: desc *= 100
-                        if 0 < tx_ml < 1.0: tx_ml *= 100
-                        if frete == 0: frete = 18.86
-                        if tx_ml == 0: tx_ml = 16.5
-                        if preco_erp == 0: preco_erp = preco_base 
-
-                        novo_item = {
-                            "id": int(time.time() * 1000) + index,
-                            "MLB": mlb, "SKU": "", "Produto": produto, "CMV": cmv,
-                            "FreteManual": frete, "TaxaML": tx_ml, "Extra": 0.0,
-                            "PrecoERP": preco_erp, "MargemERP": st.session_state.n_merp, 
-                            "PrecoBase": preco_base, "DescontoPct": desc, "Bonus": bonus
-                        }
-                        st.session_state.lista_produtos.append(novo_item)
-                        count += 1
-                    except: continue
-                st.toast(f"{count} importados!", icon="🚀")
-                time.sleep(1)
-                reiniciar_app()
+            if st.button("Preview / Mapear", type="primary"):
+                st.session_state.df_preview = xl.parse(aba, header=header, nrows=2)
+                st.session_state.import_config = {'file': uploaded_file, 'aba': aba, 'header': header}
+                st.rerun()
+                
         except Exception as e: st.error(f"Erro: {e}")
 
-# --- 6. LÓGICA DE NEGÓCIO ---
+    # Lógica de Importação (Persistente)
+    if 'import_config' in st.session_state and 'df_preview' in st.session_state:
+        df_p = st.session_state.df_preview
+        cols = list(df_p.columns)
+        
+        st.caption("Mapeie as colunas:")
+        def g_idx(k): 
+            for i, c in enumerate(cols): 
+                if k.lower() in str(c).lower(): return i
+            return 0
+            
+        c_prod = st.selectbox("Produto", cols, index=g_idx("Produto"))
+        c_cmv = st.selectbox("CMV", cols, index=g_idx("CMV"))
+        c_prc = st.selectbox("Preço", cols, index=g_idx("Preço"))
+        
+        if st.button("Confirmar Importação"):
+            try:
+                cfg = st.session_state.import_config
+                df = pd.read_excel(cfg['file'], sheet_name=cfg['aba'], header=cfg['header'])
+                cnt = 0
+                for _, row in df.iterrows():
+                    try:
+                        p = str(row[c_prod])
+                        if not p or p == 'nan': continue
+                        c = limpar_valor_dinheiro(row[c_cmv])
+                        pb = limpar_valor_dinheiro(row[c_prc])
+                        
+                        st.session_state.lista_produtos.append({
+                            "id": int(time.time()*1000)+_, "MLB": "", "SKU": "", "Produto": p,
+                            "CMV": c, "FreteManual": 18.86, "TaxaML": 16.5, "Extra": 0.0,
+                            "PrecoERP": 0.0, "MargemERP": 20.0, "PrecoBase": pb, "DescontoPct": 0.0, "Bonus": 0.0
+                        })
+                        cnt += 1
+                    except: continue
+                st.toast(f"{cnt} importados!")
+                del st.session_state['import_config']
+                time.sleep(1)
+                st.rerun()
+            except: st.error("Erro na importação final")
+
+# --- 6. LÓGICA ---
 def identificar_faixa_frete(preco):
     if preco >= 79.00: return "manual", 0.0
     elif 50.00 <= preco < 79.00: return "Tab. 50-79", taxa_50_79
@@ -179,7 +190,6 @@ def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, i
         if p_min <= preco < p_max: return preco, nome
     return preco_est_1, "Frete Manual"
 
-# --- 7. CALLBACKS ---
 def adicionar_produto_action():
     if not st.session_state.n_nome:
         st.toast("Nome obrigatório!", icon="⚠️")
@@ -206,244 +216,124 @@ def adicionar_produto_action():
     st.session_state.n_extra = 0.00
 
 # ==============================================================================
-# 8. INTERFACE PRINCIPAL
+# 7. INTERFACE PRINCIPAL (SPOTLIGHT)
 # ==============================================================================
 
-col_t, col_c = st.columns([3, 1])
-col_t.title("Precificador")
-col_c.caption(f"{len(st.session_state.lista_produtos)} itens")
-
-# --- INPUT CARD ---
-st.markdown('<div class="input-card">', unsafe_allow_html=True)
-st.text_input("MLB (ID do Anúncio)", key="n_mlb", placeholder="Ex: MLB-12345678")
-c1, c2 = st.columns([1, 2])
-c1.text_input("SKU (Interno)", key="n_sku", placeholder="Cód.")
-c2.text_input("Produto", key="n_nome", placeholder="Nome do item")
-c3, c4 = st.columns(2)
-c3.number_input("Custo (CMV)", step=0.01, format="%.2f", key="n_cmv")
-c4.number_input("Frete (>79)", step=0.01, format="%.2f", key="n_frete")
-st.markdown("<hr style='margin: 15px 0; border-color: #eee;'>", unsafe_allow_html=True)
-c5, c6, c7 = st.columns(3)
-c5.number_input("Comissão %", step=0.5, format="%.1f", key="n_taxa")
-c6.number_input("Preço ERP", step=0.01, format="%.2f", key="n_erp")
-c7.number_input("Margem ERP %", step=1.0, format="%.1f", key="n_merp")
-st.write("")
-st.button("✨ Precificar e Adicionar", type="primary", use_container_width=True, on_click=adicionar_produto_action)
+# --- BARRA DE BUSCA FLUTUANTE (TOP) ---
+st.markdown('<div class="search-wrapper">', unsafe_allow_html=True)
+col_search, col_sort = st.columns([3, 1])
+termo_busca = col_search.text_input("", placeholder="🔍 O que você procura? (Nome, SKU...)", label_visibility="collapsed")
+ordem = col_sort.selectbox("", ["Recentes", "A-Z", "Margem Maior", "Margem Menor"], label_visibility="collapsed")
 st.markdown('</div>', unsafe_allow_html=True)
 
-# ==============================================================================
-# --- BARRA DE BUSCA E ORDENAÇÃO (GOOGLE STYLE) ---
-# ==============================================================================
-if st.session_state.lista_produtos:
-    
-    st.markdown("### 🔎 Explorar Estoque")
-    
-    # Layout de Busca + Sort
-    c_busca, c_sort = st.columns([2.5, 1])
-    termo_busca = c_busca.text_input("", placeholder="Busque por Nome, SKU ou MLB...", label_visibility="collapsed")
-    criterio_sort = c_sort.selectbox("", ["Mais Recentes", "Maior Margem", "Menor Margem", "Maior Preço", "Menor Preço", "A-Z"], label_visibility="collapsed")
+# LÓGICA DE EXIBIÇÃO: BUSCA vs CADASTRO
+lista_exibicao = st.session_state.lista_produtos
+modo_busca = False
 
-    # 1. PROCESSAR LISTA PARA ORDENAÇÃO
-    lista_processada = []
+if termo_busca:
+    modo_busca = True
+    t = termo_busca.lower()
+    lista_exibicao = [p for p in lista_exibicao if t in p['Produto'].lower() or t in str(p['SKU']).lower() or t in str(p['MLB']).lower()]
+
+# ORDENAÇÃO
+if ordem == "A-Z": lista_exibicao.sort(key=lambda x: x['Produto'].lower())
+elif ordem == "Recentes": lista_exibicao.reverse() # Assumindo que a lista original é cronologica
+# (Para ordenar por margem, precisamos calcular antes, faremos no loop)
+
+# ==============================================================================
+# SE NÃO ESTIVER BUSCANDO: MOSTRA CADASTRO
+# ==============================================================================
+if not modo_busca:
+    st.markdown('<div class="input-card">', unsafe_allow_html=True)
+    st.caption("CADASTRAR NOVO")
     
-    for item in st.session_state.lista_produtos:
-        # Recalcula valores para poder ordenar corretamente
+    st.text_input("MLB", key="n_mlb", placeholder="Ex: MLB-12345")
+    c1, c2 = st.columns([1, 2])
+    c1.text_input("SKU", key="n_sku")
+    c2.text_input("Produto", key="n_nome")
+    c3, c4 = st.columns(2)
+    c3.number_input("Custo (CMV)", step=0.01, format="%.2f", key="n_cmv")
+    c4.number_input("Frete Manual", step=0.01, format="%.2f", key="n_frete")
+    st.markdown("<hr style='margin: 10px 0; border-color: #eee;'>", unsafe_allow_html=True)
+    c5, c6, c7 = st.columns(3)
+    c5.number_input("Taxa ML %", step=0.5, format="%.1f", key="n_taxa")
+    c6.number_input("Preço ERP", step=0.01, format="%.2f", key="n_erp")
+    c7.number_input("Margem ERP %", step=1.0, format="%.1f", key="n_merp")
+    st.write("")
+    st.button("Cadastrar Item", type="primary", use_container_width=True, on_click=adicionar_produto_action)
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ==============================================================================
+# RESULTADOS (CARD OU LISTA COMPACTA SE BUSCANDO)
+# ==============================================================================
+
+if modo_busca:
+    st.caption(f"Encontrados: {len(lista_exibicao)}")
+else:
+    st.markdown("### Últimos Adicionados")
+
+if not lista_exibicao and modo_busca:
+    st.warning("Nenhum produto encontrado com este termo.")
+
+# Pré-cálculo para ordenação complexa (Margem) se necessário
+if "Margem" in ordem:
+    temp_list = []
+    for item in lista_exibicao:
         pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
         _, fr = identificar_faixa_frete(pf)
         if _ == "manual": fr = item['FreteManual']
         luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
-        marg = (luc/pf*100) if pf > 0 else 0
-        
-        # Cria objeto temporário enriquecido para filtro/sort
-        item_view = item.copy()
-        item_view['_calc_preco'] = pf
-        item_view['_calc_margem'] = marg
-        item_view['_calc_lucro'] = luc
-        lista_processada.append(item_view)
-
-    # 2. FILTRO DE TEXTO
-    if termo_busca:
-        term = termo_busca.lower()
-        lista_processada = [
-            p for p in lista_processada 
-            if term in p['Produto'].lower() 
-            or term in str(p['MLB']).lower() 
-            or term in str(p['SKU']).lower()
-        ]
-
-    # 3. ORDENAÇÃO
-    if criterio_sort == "Maior Margem":
-        lista_processada.sort(key=lambda x: x['_calc_margem'], reverse=True)
-    elif criterio_sort == "Menor Margem":
-        lista_processada.sort(key=lambda x: x['_calc_margem'])
-    elif criterio_sort == "Maior Preço":
-        lista_processada.sort(key=lambda x: x['_calc_preco'], reverse=True)
-    elif criterio_sort == "Menor Preço":
-        lista_processada.sort(key=lambda x: x['_calc_preco'])
-    elif criterio_sort == "A-Z":
-        lista_processada.sort(key=lambda x: x['Produto'].lower())
-    else: # Mais Recentes
-        lista_processada.reverse() # Inverte a lista original que é cronológica
-
-    # Exibição do contador
-    if termo_busca:
-        st.caption(f"Encontrados: {len(lista_processada)} produtos")
-
-    # --- RENDERIZAÇÃO ---
-    for item in lista_processada:
-        
-        # Dados prontos
-        preco_final_calc = item['_calc_preco']
-        lucro_final = item['_calc_lucro']
-        margem_final = item['_calc_margem']
-        
-        # Cores
-        if margem_final < 8.0: pill_class = "pill-red"
-        elif 8.0 <= margem_final < 15.0: pill_class = "pill-yellow"
-        else: pill_class = "pill-green"
-
-        txt_pill = f"{margem_final:.1f}%"
-        txt_lucro_reais = f"R$ {lucro_final:.2f}"
-        if lucro_final > 0: txt_lucro_reais = "+ " + txt_lucro_reais
-
-        sku_display = item.get('SKU', '-')
-        
-        # Card
-        st.markdown(f"""
-        <div class="feed-card">
-            <div class="card-header">
-                <div>
-                    <div class="sku-text">{item['MLB']} • {sku_display}</div>
-                    <div class="title-text">{item['Produto']}</div>
-                </div>
-                <div class="{pill_class} pill">{txt_pill}</div>
-            </div>
-            <div class="card-body">
-                <div style="font-size: 11px; color:#888; font-weight:600;">PREÇO DE VENDA</div>
-                <div class="price-hero">R$ {preco_final_calc:.2f}</div>
-                <div style="font-size: 13px; color:#555;">Lucro Líquido: <b>{txt_lucro_reais}</b></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        with st.expander("⚙️ Editar e Detalhes"):
-            st.caption("AJUSTES RÁPIDOS")
-            
-            # ATENÇÃO: Para editar, precisamos achar o índice real no session_state original
-            # pois 'lista_processada' é apenas uma cópia filtrada/ordenada
-            real_idx = -1
-            for idx_orig, item_orig in enumerate(st.session_state.lista_produtos):
-                if item_orig['id'] == item['id']:
-                    real_idx = idx_orig
-                    break
-            
-            if real_idx != -1:
-                # Callback de Atualização
-                def update_field(key_widget, field_name, idx=real_idx):
-                    st.session_state.lista_produtos[idx][field_name] = st.session_state[key_widget]
-
-                ec1, ec2, ec3 = st.columns(3)
-                ec1.number_input("Preço Tabela", value=float(item['PrecoBase']), step=0.5, key=f"pb_{item['id']}", 
-                                 on_change=update_field, args=(f"pb_{item['id']}", 'PrecoBase'))
-                
-                ec2.number_input("Desconto %", value=float(item['DescontoPct']), step=0.5, key=f"dc_{item['id']}", 
-                                 on_change=update_field, args=(f"dc_{item['id']}", 'DescontoPct'))
-                
-                ec3.number_input("Rebate (R$)", value=float(item['Bonus']), step=0.01, key=f"bn_{item['id']}", 
-                                 on_change=update_field, args=(f"bn_{item['id']}", 'Bonus'))
-                
-                st.divider()
-                
-                # DRE NATIVA
-                st.caption("EXTRATO FINANCEIRO")
-                r1, r2 = st.columns([3, 1])
-                r1.write("(+) Preço Tabela")
-                r2.write(f"R$ {item['PrecoBase']:.2f}")
-                
-                if item['DescontoPct'] > 0:
-                    r1, r2 = st.columns([3, 1])
-                    r1.markdown(f":red[(-) Desconto ({item['DescontoPct']}%) ]")
-                    r2.markdown(f":red[- R$ {item['PrecoBase'] - preco_final_calc:.2f}]")
-                
-                st.markdown("---")
-                r1, r2 = st.columns([3, 1])
-                r1.markdown("**(=) RECEITA BRUTA**")
-                r2.markdown(f"**R$ {preco_final_calc:.2f}**")
-                
-                # Recalcula custos para exibição da DRE
-                nome_frete_real, valor_frete_real = identificar_faixa_frete(preco_final_calc)
-                if nome_frete_real == "manual": valor_frete_real = item['FreteManual']
-                imposto_val = preco_final_calc * (imposto_padrao / 100)
-                comissao_val = preco_final_calc * (item['TaxaML'] / 100)
-                
-                st.write("") 
-                custos = [
-                    (f"Impostos ({imposto_padrao}%)", imposto_val),
-                    (f"Comissão ({item['TaxaML']}%)", comissao_val),
-                    (f"Frete ({nome_frete_real})", valor_frete_real),
-                    ("Custo CMV", item['CMV']),
-                    ("Extras", item['Extra'])
-                ]
-                
-                for lbl, val in custos:
-                    c_lbl, c_val = st.columns([3, 1])
-                    c_lbl.caption(f"(-) {lbl}")
-                    c_val.caption(f"- R$ {val:.2f}")
-                
-                if item['Bonus'] > 0:
-                    st.write("")
-                    r1, r2 = st.columns([3, 1])
-                    r1.markdown(":green[(+) Rebate / Bônus]")
-                    r2.markdown(f":green[+ R$ {item['Bonus']:.2f}]")
-                
-                st.write("")
-                
-                # Box Resultado
-                box_style = "background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5;"
-                if margem_final < 8: box_style = "background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2;"
-                elif margem_final < 15: box_style = "background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D;"
-
-                st.markdown(f"""
-                <div style="{box_style} padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-weight: 700; font-size: 14px;">LUCRO LÍQUIDO</span>
-                    <span style="font-weight: 800; font-size: 18px;">R$ {lucro_final:.2f}</span>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                st.write("")
-                
-                # Deletar (Usando o ID Real)
-                def deletar(target_id=item['id']):
-                    st.session_state.lista_produtos = [p for p in st.session_state.lista_produtos if p['id'] != target_id]
-                    
-                st.button("Remover Item", key=f"del_{item['id']}", on_click=deletar)
-
-    # Footer
-    st.divider()
-    col_d, col_c = st.columns(2)
+        mrg = (luc/pf*100) if pf else 0
+        temp_item = item.copy()
+        temp_item['_mrg'] = mrg
+        temp_list.append(temp_item)
     
-    dados_csv = []
-    for it in st.session_state.lista_produtos:
-        pf = it['PrecoBase'] * (1 - it['DescontoPct']/100)
-        _, fr = identificar_faixa_frete(pf)
-        if _ == "manual": fr = it['FreteManual']
-        luc = pf - (it['CMV'] + it['Extra'] + fr + (pf*(imposto_padrao+it['TaxaML'])/100)) + it['Bonus']
-        dados_csv.append({
-            "MLB": it['MLB'], "SKU": it.get('SKU', ''), "Produto": it['Produto'], 
-            "Preco Final": pf, "Lucro": luc, "Margem %": (luc/pf*100) if pf else 0
-        })
-        
-    df_final = pd.DataFrame(dados_csv)
-    csv = df_final.to_csv(index=False).encode('utf-8')
-    col_d.download_button("📥 Baixar Excel", csv, "precificacao_2026.csv", "text/csv", use_container_width=True)
-    
-    def limpar_tudo(): st.session_state.lista_produtos = []
-    col_c.button("🗑️ Limpar Tudo", on_click=limpar_tudo, use_container_width=True)
+    if ordem == "Margem Maior": temp_list.sort(key=lambda x: x['_mrg'], reverse=True)
+    else: temp_list.sort(key=lambda x: x['_mrg'])
+    lista_exibicao = temp_list
 
-else:
-    st.markdown("""
-    <div style="text-align: center; color: #BBB; padding: 40px;">
-        <h3 style="color: #DDD;">Lista Vazia</h3>
-        Preencha os dados acima para começar.
-    </div>
-    """, unsafe_allow_html=True)
+# RENDERIZAÇÃO
+for item in lista_exibicao:
+    # --- CÁLCULO ---
+    preco_base_calc = item['PrecoBase']
+    desc_calc = item['DescontoPct']
+    preco_final_calc = preco_base_calc * (1 - (desc_calc / 100))
+    
+    nome_frete_real, valor_frete_real = identificar_faixa_frete(preco_final_calc)
+    if nome_frete_real == "manual": valor_frete_real = item['FreteManual']
+    
+    imposto_val = preco_final_calc * (imposto_padrao / 100)
+    comissao_val = preco_final_calc * (item['TaxaML'] / 100)
+    custos_totais = item['CMV'] + item['Extra'] + valor_frete_real + imposto_val + comissao_val
+    lucro_final = preco_final_calc - custos_totais + item['Bonus']
+    margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
+    
+    # --- VISUAL ---
+    if margem_final < 8.0: pill_cls = "pill-red"
+    elif 8.0 <= margem_final < 15.0: pill_cls = "pill-yellow"
+    else: pill_cls = "pill-green"
+
+    txt_pill = f"{margem_final:.1f}%"
+    txt_lucro = f"R$ {lucro_final:.2f}"
+    if lucro_final > 0: txt_lucro = "+ " + txt_lucro
+    
+    sku_show = item.get('SKU', '')
+    
+    # SE ESTIVER BUSCANDO: MOSTRA COMPACTO
+    if modo_busca:
+        with st.container():
+            st.markdown(f"""
+            <div class="result-row">
+                <div style="flex:2">
+                    <div style="font-weight:600; color:#333;">{item['Produto']}</div>
+                    <div style="font-size:11px; color:#999;">{item['MLB']} {sku_show}</div>
+                </div>
+                <div style="flex:1; text-align:right;">
+                    <div style="font-weight:700; font-size:14px;">R$ {preco_final_calc:.2f}</div>
+                    <div class="{pill_cls}" style="font-size:10px; padding:2px 8px;">{txt_pill}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            with st.expander("Ver Detalhes"):
+                # ... (Código de Edição P
