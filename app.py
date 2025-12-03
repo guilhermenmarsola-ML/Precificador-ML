@@ -4,7 +4,7 @@ import time
 import re
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - Import ERP", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - V41 Decimal Fix", layout="centered", page_icon="💎")
 
 # --- 2. ESTADO (MEMORY) ---
 if 'lista_produtos' not in st.session_state:
@@ -14,17 +14,19 @@ def init_state(key, value):
     if key not in st.session_state:
         st.session_state[key] = value
 
+# Variáveis Temporárias
 init_state('n_mlb', '') 
 init_state('n_sku', '') 
 init_state('n_nome', '')
 init_state('n_cmv', 32.57)
 init_state('n_extra', 0.00)
+# Variáveis Fixas
 init_state('n_frete', 18.86)
 init_state('n_taxa', 16.5)
 init_state('n_erp', 85.44)
 init_state('n_merp', 20.0)
 
-# --- 3. CSS (DESIGN SYSTEM V30) ---
+# --- 3. DESIGN SYSTEM ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
@@ -74,7 +76,7 @@ with st.sidebar:
         taxa_minima = st.number_input("Min", value=3.25)
     st.divider()
     
-    # --- ÁREA DE IMPORTAÇÃO (ATUALIZADA COM ERP) ---
+    # --- ÁREA DE IMPORTAÇÃO ---
     st.markdown("### 📂 Importar Planilha")
     uploaded_file = st.file_uploader("Arraste seu Excel", type=['xlsx'])
     
@@ -101,10 +103,7 @@ with st.sidebar:
             col_nome = st.selectbox("Nome do Produto", cols_validas, index=get_idx(cols_validas, ["Produto", "Nome", "Descrição"]))
             col_mlb = st.selectbox("Código / MLB", cols_validas, index=get_idx(cols_validas, ["Anúncio", "MLB", "ID"]))
             col_cmv = st.selectbox("Custo (CMV)", cols_validas, index=get_idx(cols_validas, ["CMV", "Custo"]))
-            
-            # NOVO CAMPO: PREÇO ERP
             col_erp = st.selectbox("Preço ERP / GRA / Base", cols_validas, index=get_idx(cols_validas, ["GRA", "ERP", "Base", "Tabela"]))
-            
             col_preco = st.selectbox("Preço Venda (Praticado)", cols_validas, index=get_idx(cols_validas, ["Preço Usado", "Venda", "Preço"]))
             col_frete = st.selectbox("Frete Manual (>79)", cols_validas, index=get_idx(cols_validas, ["Frete do anúncio", "Frete"]))
             col_taxa = st.selectbox("Taxa ML (%)", cols_validas, index=get_idx(cols_validas, ["TX ML", "Comissão"]))
@@ -122,19 +121,23 @@ with st.sidebar:
 
                         mlb = str(row[col_mlb])
                         
-                        # Valores
+                        # Limpeza Pesada nos Valores
                         cmv = limpar_valor_dinheiro(row[col_cmv])
-                        preco_erp = limpar_valor_dinheiro(row[col_erp]) # IMPORTANDO ERP
+                        preco_erp = limpar_valor_dinheiro(row[col_erp])
                         preco_base = limpar_valor_dinheiro(row[col_preco])
                         frete = limpar_valor_dinheiro(row[col_frete])
                         tx_ml = limpar_valor_dinheiro(row[col_taxa])
                         desc = limpar_valor_dinheiro(row[col_desc])
                         bonus = limpar_valor_dinheiro(row[col_bonus])
                         
+                        # --- CORREÇÃO DE DECIMAL EXCEL (0.03 -> 3.0) ---
+                        if 0 < desc < 1.0: desc *= 100
+                        if 0 < tx_ml < 1.0: tx_ml *= 100
+                        
                         # Defaults
                         if frete == 0: frete = 18.86
                         if tx_ml == 0: tx_ml = 16.5
-                        if preco_erp == 0: preco_erp = preco_base # Fallback se não tiver ERP
+                        if preco_erp == 0: preco_erp = preco_base 
 
                         novo_item = {
                             "id": int(time.time() * 1000) + index,
@@ -145,8 +148,8 @@ with st.sidebar:
                             "FreteManual": frete,
                             "TaxaML": tx_ml,
                             "Extra": 0.0,
-                            "PrecoERP": preco_erp, # SALVANDO ERP
-                            "MargemERP": st.session_state.n_merp, # Usa a margem global definida no sidebar
+                            "PrecoERP": preco_erp, 
+                            "MargemERP": st.session_state.n_merp, 
                             "PrecoBase": preco_base,
                             "DescontoPct": desc,
                             "Bonus": bonus
@@ -155,7 +158,7 @@ with st.sidebar:
                         count += 1
                     except: continue
                 
-                st.toast(f"{count} importados!", icon="🚀")
+                st.toast(f"{count} produtos importados!", icon="🚀")
                 time.sleep(1)
                 reiniciar_app()
                 
@@ -322,15 +325,6 @@ if st.session_state.lista_produtos:
             def update_item(idx=i, key_id=item['id'], field=None, key_st=None):
                 st.session_state.lista_produtos[idx][field] = st.session_state[key_st]
 
-            # Destaque para o ERP e Edição
-            c_erp1, c_erp2 = st.columns(2)
-            c_erp1.number_input("Preço ERP", value=float(item['PrecoERP']), step=0.5, key=f"erp_{item['id']}", 
-                                on_change=update_item, args=(i, item['id'], 'PrecoERP', f"erp_{item['id']}"))
-            c_erp2.number_input("Margem ERP %", value=float(item['MargemERP']), step=1.0, key=f"merp_{item['id']}", 
-                                on_change=update_item, args=(i, item['id'], 'MargemERP', f"merp_{item['id']}"))
-            
-            st.write("")
-            
             ec1, ec2, ec3 = st.columns(3)
             ec1.number_input("Preço Tabela", value=float(item['PrecoBase']), step=0.5, key=f"pb_{item['id']}", 
                              on_change=update_item, args=(i, item['id'], 'PrecoBase', f"pb_{item['id']}"))
