@@ -4,7 +4,7 @@ import time
 import re
 
 # --- 1. CONFIGURAÇÃO ---
-st.set_page_config(page_title="Precificador 2026 - Autocomplete", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - Final V48", layout="centered", page_icon="💎")
 
 # --- 2. ESTADO ---
 if 'lista_produtos' not in st.session_state:
@@ -54,7 +54,7 @@ st.markdown("""
     div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input { background-color: #FAFAFA !important; border: 1px solid #E5E5E5 !important; color: #333 !important; border-radius: 8px !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border-radius: 10px; height: 50px; border: none; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
     
-    /* ESTILO DA BARRA DE BUSCA (SELECTBOX) */
+    /* Search Bar Style */
     div[data-testid="stSelectbox"] > div > div {
         background-color: white !important;
         border: 1px solid #2563EB !important;
@@ -213,48 +213,41 @@ def adicionar_produto_action():
 # 7. INTERFACE PRINCIPAL
 # ==============================================================================
 
-# --- CABEÇALHO E BUSCA AUTOCOMPLETE (GOOGLE STYLE) ---
+# --- CABEÇALHO ---
 st.markdown('<div style="text-align:center; padding-bottom:10px;">', unsafe_allow_html=True)
 st.title("Precificador 2026")
 st.markdown('</div>', unsafe_allow_html=True)
 
-# LÓGICA DE BUSCA COM SELECTBOX (AUTOCOMPLETE)
-# Criamos uma lista de opções onde cada opção é uma string única
-# Formato: "Nome do Produto | MLB: 12345"
+# LÓGICA DE BUSCA
 mapa_busca = {}
 opcoes_busca = []
-
 for p in st.session_state.lista_produtos:
-    # Cria uma chave única de texto
     label = f"{p['Produto']} (MLB: {p['MLB']})"
     opcoes_busca.append(label)
-    mapa_busca[label] = p # Guarda o objeto produto inteiro ligado a esse nome
+    mapa_busca[label] = p
 
 c_busca, c_sort = st.columns([3, 1])
 
-# O PULO DO GATO: Selectbox sem index vira um campo de busca
 selecao_busca = c_busca.selectbox(
     "Pesquisar", 
     options=opcoes_busca, 
     index=None, 
-    placeholder="🔍 Digite para buscar (Google Style)...",
+    placeholder="🔍 Digite para buscar...",
     label_visibility="collapsed"
 )
 
-ordem_sort = c_sort.selectbox("", ["Recentes", "A-Z", "Maior Margem", "Menor Margem", "Maior Preço"], label_visibility="collapsed")
+# CLASSIFICAÇÃO (Com Z-A Adicionado)
+ordem_sort = c_sort.selectbox("", ["Recentes", "A-Z", "Z-A", "Maior Margem", "Menor Margem", "Maior Preço"], label_visibility="collapsed")
 
 # --- DECISÃO DO QUE MOSTRAR ---
 lista_final = []
 
 if selecao_busca:
-    # Se o usuário selecionou uma sugestão, mostramos SÓ aquele produto
     produto_escolhido = mapa_busca[selecao_busca]
     lista_final = [produto_escolhido]
 else:
-    # Se não selecionou nada, mostra a lista inteira (com ordenação)
     lista_final = st.session_state.lista_produtos.copy()
     
-    # Pré-cálculo para ordenação
     for item in lista_final:
         pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
         _, fr = identificar_faixa_frete(pf)
@@ -263,14 +256,15 @@ else:
         item['_mrg'] = (luc/pf*100) if pf else 0
         item['_prc'] = pf
 
-    # Ordenação
+    # ORDENAÇÃO
     if ordem_sort == "A-Z": lista_final.sort(key=lambda x: x['Produto'].lower())
+    elif ordem_sort == "Z-A": lista_final.sort(key=lambda x: x['Produto'].lower(), reverse=True) # Z-A Adicionado
     elif ordem_sort == "Maior Margem": lista_final.sort(key=lambda x: x['_mrg'], reverse=True)
     elif ordem_sort == "Menor Margem": lista_final.sort(key=lambda x: x['_mrg'])
     elif ordem_sort == "Maior Preço": lista_final.sort(key=lambda x: x['_prc'], reverse=True)
     else: lista_final.reverse()
 
-# Se não estiver buscando, mostra o formulário de cadastro
+# CADASTRO (Se não busca)
 if not selecao_busca:
     st.markdown('<div class="input-card">', unsafe_allow_html=True)
     st.caption("CADASTRAR NOVO")
@@ -290,17 +284,15 @@ if not selecao_busca:
     st.button("Cadastrar Item", type="primary", use_container_width=True, on_click=adicionar_produto_action)
     st.markdown('</div>', unsafe_allow_html=True)
 
-# --- RENDERIZAÇÃO DA LISTA ---
+# --- RENDERIZAÇÃO ---
 if lista_final:
     
     if selecao_busca:
-        st.markdown(f"### Resultado da Busca ({len(lista_final)})")
+        st.markdown(f"### Resultado ({len(lista_final)})")
     else:
         st.markdown(f"### Estoque ({len(lista_final)})")
 
     for item in lista_final:
-        
-        # --- CÁLCULO ---
         preco_base_calc = item['PrecoBase']
         desc_calc = item['DescontoPct']
         preco_final_calc = preco_base_calc * (1 - (desc_calc / 100))
@@ -314,40 +306,37 @@ if lista_final:
         lucro_final = preco_final_calc - custos_totais + item['Bonus']
         margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
         
-        # --- CORES ---
-        if margem_final < 8.0: pill_class = "pill-red"
-        elif 8.0 <= margem_final < 15.0: pill_class = "pill-yellow"
-        else: pill_class = "pill-green"
+        if margem_final < 8.0: pill_cls = "pill-red"
+        elif 8.0 <= margem_final < 15.0: pill_cls = "pill-yellow"
+        else: pill_cls = "pill-green"
 
         txt_pill = f"{margem_final:.1f}%"
-        txt_lucro_reais = f"R$ {lucro_final:.2f}"
-        if lucro_final > 0: txt_lucro_reais = "+ " + txt_lucro_reais
-
-        sku_display = item.get('SKU', '-')
+        txt_lucro = f"R$ {lucro_final:.2f}"
+        if lucro_final > 0: txt_lucro = "+ " + txt_lucro
+        
+        sku_show = item.get('SKU', '-')
         
         st.markdown(f"""
         <div class="feed-card">
             <div class="card-header">
                 <div>
-                    <div class="sku-text">{item['MLB']} {sku_display}</div>
+                    <div class="sku-text">{item['MLB']} {sku_show}</div>
                     <div class="title-text">{item['Produto']}</div>
                 </div>
-                <div class="{pill_class} pill">{txt_pill}</div>
+                <div class="{pill_cls} pill">{txt_pill}</div>
             </div>
             <div class="card-body">
                 <div style="font-size: 11px; color:#888; font-weight:600;">PREÇO DE VENDA</div>
                 <div class="price-hero">R$ {preco_final_calc:.2f}</div>
-                <div style="font-size: 13px; color:#555;">Lucro Líquido: <b>{txt_lucro_reais}</b></div>
+                <div style="font-size: 13px; color:#555;">Lucro Líquido: <b>{txt_lucro}</b></div>
             </div>
         </div>
         """, unsafe_allow_html=True)
 
         with st.expander("⚙️ Editar e Detalhes"):
-            
-            # Encontrar índice real para edição
             real_idx = -1
-            for i, org in enumerate(st.session_state.lista_produtos):
-                if org['id'] == item['id']: real_idx = i; break
+            for idx, org in enumerate(st.session_state.lista_produtos):
+                if org['id'] == item['id']: real_idx = idx; break
             
             if real_idx != -1:
                 def up_field(k, f, i=real_idx): st.session_state.lista_produtos[i][f] = st.session_state[k]
@@ -358,74 +347,24 @@ if lista_final:
                 ec3.number_input("Rebate R$", value=float(item['Bonus']), step=0.01, key=f"b_{item['id']}", on_change=up_field, args=(f"b_{item['id']}", 'Bonus'))
                 
                 st.divider()
-                
                 # DRE
-                r1, r2 = st.columns([3, 1])
-                r1.write("(+) Preço Tabela")
-                r2.write(f"R$ {item['PrecoBase']:.2f}")
+                col_dre1, col_dre2 = st.columns([2, 1])
+                col_dre1.caption("Detalhes de Custo")
+                _, fr_real = identificar_faixa_frete(preco_final_calc)
+                if _ == "manual": fr_real = item['FreteManual']
+                taxs = preco_final_calc * ((imposto_padrao + item['TaxaML']) / 100)
+                col_dre1.write(f"Impostos + Comissões: R$ {taxs:.2f}")
+                col_dre1.write(f"Frete + Custos: R$ {(fr_real + item['CMV'] + item['Extra']):.2f}")
                 
-                if item['DescontoPct'] > 0:
-                    r1, r2 = st.columns([3, 1])
-                    r1.markdown(f":red[(-) Desconto ({item['DescontoPct']}%) ]")
-                    r2.markdown(f":red[- R$ {item['PrecoBase'] - preco_final_calc:.2f}]")
-                
-                st.markdown("---")
-                r1, r2 = st.columns([3, 1])
-                r1.markdown("**(=) RECEITA BRUTA**")
-                r2.markdown(f"**R$ {preco_final_calc:.2f}**")
-                
-                st.write("") 
-                custos = [
-                    (f"Impostos ({imposto_padrao}%)", imposto_val),
-                    (f"Comissão ({item['TaxaML']}%)", comissao_val),
-                    (f"Frete ({nome_frete_real})", valor_frete_real),
-                    ("Custo CMV", item['CMV']),
-                    ("Extras", item['Extra'])
-                ]
-                for lbl, val in custos:
-                    c_lbl, c_val = st.columns([3, 1])
-                    c_lbl.caption(f"(-) {lbl}")
-                    c_val.caption(f"- R$ {val:.2f}")
-                
-                if item['Bonus'] > 0:
-                    st.write("")
-                    r1, r2 = st.columns([3, 1])
-                    r1.markdown(":green[(+) Rebate / Bônus]")
-                    r2.markdown(f":green[+ R$ {item['Bonus']:.2f}]")
-                
-                st.write("")
-                
-                # Box Resultado
-                box_style = "background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5;"
-                if margem_final < 8: box_style = "background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2;"
-                elif margem_final < 15: box_style = "background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D;"
-
-                st.markdown(f"""
-                <div style="{box_style} padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
-                    <span style="font-weight: 700; font-size: 14px;">LUCRO LÍQUIDO</span>
-                    <span style="font-weight: 800; font-size: 18px;">R$ {lucro_final:.2f}</span>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                st.write("")
-                if st.button("Remover Item", key=f"del_{item['id']}"):
+                if st.button("🗑️ Excluir", key=f"del_{item['id']}"):
                     del st.session_state.lista_produtos[real_idx]
                     reiniciar_app()
-
-    # Footer
-    st.divider()
-    col_d, col_c = st.columns(2)
-    df_final = pd.DataFrame(lista_final) # Exporta filtrado ou total
-    csv = df_final.to_csv(index=False).encode('utf-8')
-    col_d.download_button("📥 Baixar Excel", csv, "precificacao_2026.csv", "text/csv", use_container_width=True)
-    def limpar_tudo(): st.session_state.lista_produtos = []
-    col_c.button("🗑️ Limpar Tudo", on_click=limpar_tudo, use_container_width=True)
 
 else:
     if not selecao_busca:
         st.markdown("""
         <div style="text-align: center; color: #BBB; padding: 40px;">
             <h3 style="color: #DDD;">Lista Vazia</h3>
-            Preencha os dados acima para começar.
+            Preencha os dados acima.
         </div>
         """, unsafe_allow_html=True)
