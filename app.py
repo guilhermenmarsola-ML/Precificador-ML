@@ -1,10 +1,12 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px
+import plotly.graph_objects as go
 import time
 import re
 
 # --- 1. CONFIGURAÇÃO ---
-st.set_page_config(page_title="Precificador 2026 - Final V48", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - BI Edition", layout="centered", page_icon="💎")
 
 # --- 2. ESTADO ---
 if 'lista_produtos' not in st.session_state:
@@ -14,7 +16,6 @@ def init_state(key, value):
     if key not in st.session_state:
         st.session_state[key] = value
 
-# Variáveis
 init_state('n_mlb', '') 
 init_state('n_sku', '') 
 init_state('n_nome', '')
@@ -31,36 +32,41 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
     .stApp { background-color: #FAFAFA; font-family: 'Inter', sans-serif; }
     
-    /* Input Card */
+    /* Abas */
+    .stTabs [data-baseweb="tab-list"] { gap: 20px; }
+    .stTabs [data-baseweb="tab"] {
+        height: 50px;
+        white-space: pre-wrap;
+        background-color: #FFFFFF;
+        border-radius: 10px;
+        color: #495057;
+        font-weight: 600;
+        box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+        padding: 0 20px;
+    }
+    .stTabs [aria-selected="true"] {
+        background-color: #2563EB !important;
+        color: white !important;
+    }
+
+    /* Cards */
     .input-card { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #EFEFEF; margin-bottom: 30px; }
-    
-    /* Feed Card */
     .feed-card { background: white; border-radius: 16px; border: 1px solid #DBDBDB; box-shadow: 0 2px 5px rgba(0,0,0,0.02); margin-bottom: 15px; overflow: hidden; }
+    
     .card-header { padding: 15px 20px; border-bottom: 1px solid #F0F0F0; display: flex; justify-content: space-between; align-items: center; }
     .card-body { padding: 20px; text-align: center; }
 
-    /* Tipografia */
     .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
     .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
     .price-hero { font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0; }
     
-    /* Pills */
     .pill { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; display: inline-block; }
     .pill-green { background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5; }
     .pill-yellow { background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D; }
     .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
 
-    /* Inputs */
     div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input { background-color: #FAFAFA !important; border: 1px solid #E5E5E5 !important; color: #333 !important; border-radius: 8px !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border-radius: 10px; height: 50px; border: none; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
-    
-    /* Search Bar Style */
-    div[data-testid="stSelectbox"] > div > div {
-        background-color: white !important;
-        border: 1px solid #2563EB !important;
-        border-radius: 12px !important;
-        box-shadow: 0 4px 15px rgba(37, 99, 235, 0.1);
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -92,7 +98,7 @@ with st.sidebar:
         taxa_minima = st.number_input("Min", value=3.25)
     st.divider()
     
-    # --- IMPORTAÇÃO ---
+    # --- ÁREA DE IMPORTAÇÃO ---
     st.markdown("### 📂 Importar Planilha")
     uploaded_file = st.file_uploader("Arraste seu Excel", type=['xlsx'])
     
@@ -210,161 +216,281 @@ def adicionar_produto_action():
     st.session_state.n_extra = 0.00
 
 # ==============================================================================
-# 7. INTERFACE PRINCIPAL
+# 7. INTERFACE PRINCIPAL (COM ABAS)
 # ==============================================================================
 
-# --- CABEÇALHO ---
-st.markdown('<div style="text-align:center; padding-bottom:10px;">', unsafe_allow_html=True)
-st.title("Precificador 2026")
-st.markdown('</div>', unsafe_allow_html=True)
+# Criação das Abas
+tab_operacional, tab_dashboard = st.tabs(["⚡ Precificador", "📊 Dashboards Estratégicos"])
 
-# LÓGICA DE BUSCA
-mapa_busca = {}
-opcoes_busca = []
-for p in st.session_state.lista_produtos:
-    label = f"{p['Produto']} (MLB: {p['MLB']})"
-    opcoes_busca.append(label)
-    mapa_busca[label] = p
-
-c_busca, c_sort = st.columns([3, 1])
-
-selecao_busca = c_busca.selectbox(
-    "Pesquisar", 
-    options=opcoes_busca, 
-    index=None, 
-    placeholder="🔍 Digite para buscar...",
-    label_visibility="collapsed"
-)
-
-# CLASSIFICAÇÃO (Com Z-A Adicionado)
-ordem_sort = c_sort.selectbox("", ["Recentes", "A-Z", "Z-A", "Maior Margem", "Menor Margem", "Maior Preço"], label_visibility="collapsed")
-
-# --- DECISÃO DO QUE MOSTRAR ---
-lista_final = []
-
-if selecao_busca:
-    produto_escolhido = mapa_busca[selecao_busca]
-    lista_final = [produto_escolhido]
-else:
-    lista_final = st.session_state.lista_produtos.copy()
+# --- ABA 1: OPERACIONAL (Tudo o que já existia) ---
+with tab_operacional:
     
-    for item in lista_final:
-        pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
-        _, fr = identificar_faixa_frete(pf)
-        if _ == "manual": fr = item['FreteManual']
-        luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
-        item['_mrg'] = (luc/pf*100) if pf else 0
-        item['_prc'] = pf
+    st.markdown('<div style="text-align:center; padding:10px;"><h3>Gestão de Preços</h3></div>', unsafe_allow_html=True)
 
-    # ORDENAÇÃO
-    if ordem_sort == "A-Z": lista_final.sort(key=lambda x: x['Produto'].lower())
-    elif ordem_sort == "Z-A": lista_final.sort(key=lambda x: x['Produto'].lower(), reverse=True) # Z-A Adicionado
-    elif ordem_sort == "Maior Margem": lista_final.sort(key=lambda x: x['_mrg'], reverse=True)
-    elif ordem_sort == "Menor Margem": lista_final.sort(key=lambda x: x['_mrg'])
-    elif ordem_sort == "Maior Preço": lista_final.sort(key=lambda x: x['_prc'], reverse=True)
-    else: lista_final.reverse()
+    # --- BARRA DE BUSCA E ORDENAÇÃO ---
+    if st.session_state.lista_produtos:
+        mapa_busca = {}
+        opcoes_busca = []
+        for p in st.session_state.lista_produtos:
+            label = f"{p['Produto']} (MLB: {p['MLB']})"
+            opcoes_busca.append(label)
+            mapa_busca[label] = p
 
-# CADASTRO (Se não busca)
-if not selecao_busca:
-    st.markdown('<div class="input-card">', unsafe_allow_html=True)
-    st.caption("CADASTRAR NOVO")
-    st.text_input("MLB", key="n_mlb", placeholder="Ex: MLB-12345")
-    c1, c2 = st.columns([1, 2])
-    c1.text_input("SKU", key="n_sku")
-    c2.text_input("Produto", key="n_nome")
-    c3, c4 = st.columns(2)
-    c3.number_input("Custo (CMV)", step=0.01, format="%.2f", key="n_cmv")
-    c4.number_input("Frete Manual", step=0.01, format="%.2f", key="n_frete")
-    st.markdown("<hr style='margin: 10px 0; border-color: #eee;'>", unsafe_allow_html=True)
-    c5, c6, c7 = st.columns(3)
-    c5.number_input("Taxa ML %", step=0.5, format="%.1f", key="n_taxa")
-    c6.number_input("Preço ERP", step=0.01, format="%.2f", key="n_erp")
-    c7.number_input("Margem ERP %", step=1.0, format="%.1f", key="n_merp")
-    st.write("")
-    st.button("Cadastrar Item", type="primary", use_container_width=True, on_click=adicionar_produto_action)
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# --- RENDERIZAÇÃO ---
-if lista_final:
-    
-    if selecao_busca:
-        st.markdown(f"### Resultado ({len(lista_final)})")
+        c_busca, c_sort = st.columns([3, 1])
+        selecao_busca = c_busca.selectbox(
+            "Pesquisar", options=opcoes_busca, index=None, 
+            placeholder="🔍 Digite para buscar...", label_visibility="collapsed"
+        )
+        ordem_sort = c_sort.selectbox("", ["Recentes", "A-Z", "Z-A", "Maior Margem", "Menor Margem", "Maior Preço"], label_visibility="collapsed")
     else:
-        st.markdown(f"### Estoque ({len(lista_final)})")
+        selecao_busca = None
 
-    for item in lista_final:
-        preco_base_calc = item['PrecoBase']
-        desc_calc = item['DescontoPct']
-        preco_final_calc = preco_base_calc * (1 - (desc_calc / 100))
-        
-        nome_frete_real, valor_frete_real = identificar_faixa_frete(preco_final_calc)
-        if nome_frete_real == "manual": valor_frete_real = item['FreteManual']
-        
-        imposto_val = preco_final_calc * (imposto_padrao / 100)
-        comissao_val = preco_final_calc * (item['TaxaML'] / 100)
-        custos_totais = item['CMV'] + item['Extra'] + valor_frete_real + imposto_val + comissao_val
-        lucro_final = preco_final_calc - custos_totais + item['Bonus']
-        margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
-        
-        if margem_final < 8.0: pill_cls = "pill-red"
-        elif 8.0 <= margem_final < 15.0: pill_cls = "pill-yellow"
-        else: pill_cls = "pill-green"
-
-        txt_pill = f"{margem_final:.1f}%"
-        txt_lucro = f"R$ {lucro_final:.2f}"
-        if lucro_final > 0: txt_lucro = "+ " + txt_lucro
-        
-        sku_show = item.get('SKU', '-')
-        
-        st.markdown(f"""
-        <div class="feed-card">
-            <div class="card-header">
-                <div>
-                    <div class="sku-text">{item['MLB']} {sku_show}</div>
-                    <div class="title-text">{item['Produto']}</div>
-                </div>
-                <div class="{pill_cls} pill">{txt_pill}</div>
-            </div>
-            <div class="card-body">
-                <div style="font-size: 11px; color:#888; font-weight:600;">PREÇO DE VENDA</div>
-                <div class="price-hero">R$ {preco_final_calc:.2f}</div>
-                <div style="font-size: 13px; color:#555;">Lucro Líquido: <b>{txt_lucro}</b></div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
-
-        with st.expander("⚙️ Editar e Detalhes"):
-            real_idx = -1
-            for idx, org in enumerate(st.session_state.lista_produtos):
-                if org['id'] == item['id']: real_idx = idx; break
-            
-            if real_idx != -1:
-                def up_field(k, f, i=real_idx): st.session_state.lista_produtos[i][f] = st.session_state[k]
-
-                ec1, ec2, ec3 = st.columns(3)
-                ec1.number_input("Preço Tabela", value=float(item['PrecoBase']), step=0.5, key=f"p_{item['id']}", on_change=up_field, args=(f"p_{item['id']}", 'PrecoBase'))
-                ec2.number_input("Desconto %", value=float(item['DescontoPct']), step=0.5, key=f"d_{item['id']}", on_change=up_field, args=(f"d_{item['id']}", 'DescontoPct'))
-                ec3.number_input("Rebate R$", value=float(item['Bonus']), step=0.01, key=f"b_{item['id']}", on_change=up_field, args=(f"b_{item['id']}", 'Bonus'))
-                
-                st.divider()
-                # DRE
-                col_dre1, col_dre2 = st.columns([2, 1])
-                col_dre1.caption("Detalhes de Custo")
-                _, fr_real = identificar_faixa_frete(preco_final_calc)
-                if _ == "manual": fr_real = item['FreteManual']
-                taxs = preco_final_calc * ((imposto_padrao + item['TaxaML']) / 100)
-                col_dre1.write(f"Impostos + Comissões: R$ {taxs:.2f}")
-                col_dre1.write(f"Frete + Custos: R$ {(fr_real + item['CMV'] + item['Extra']):.2f}")
-                
-                if st.button("🗑️ Excluir", key=f"del_{item['id']}"):
-                    del st.session_state.lista_produtos[real_idx]
-                    reiniciar_app()
-
-else:
+    # --- CADASTRO (Só aparece se não estiver buscando) ---
     if not selecao_busca:
+        st.markdown('<div class="input-card">', unsafe_allow_html=True)
+        st.caption("CADASTRAR NOVO")
+        st.text_input("MLB", key="n_mlb", placeholder="Ex: MLB-12345")
+        c1, c2 = st.columns([1, 2])
+        c1.text_input("SKU", key="n_sku")
+        c2.text_input("Produto", key="n_nome")
+        c3, c4 = st.columns(2)
+        c3.number_input("Custo (CMV)", step=0.01, format="%.2f", key="n_cmv")
+        c4.number_input("Frete Manual", step=0.01, format="%.2f", key="n_frete")
+        st.markdown("<hr style='margin: 10px 0; border-color: #eee;'>", unsafe_allow_html=True)
+        c5, c6, c7 = st.columns(3)
+        c5.number_input("Taxa ML %", step=0.5, format="%.1f", key="n_taxa")
+        c6.number_input("Preço ERP", step=0.01, format="%.2f", key="n_erp")
+        c7.number_input("Margem ERP %", step=1.0, format="%.1f", key="n_merp")
+        st.write("")
+        st.button("Cadastrar Item", type="primary", use_container_width=True, on_click=adicionar_produto_action)
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    # --- LISTA / RESULTADOS ---
+    lista_final = []
+    if selecao_busca:
+        lista_final = [mapa_busca[selecao_busca]]
+    else:
+        lista_final = st.session_state.lista_produtos.copy()
+        # Pré-cálculo para sort
+        for item in lista_final:
+            pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
+            _, fr = identificar_faixa_frete(pf)
+            if _ == "manual": fr = item['FreteManual']
+            luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
+            item['_mrg'] = (luc/pf*100) if pf else 0
+            item['_prc'] = pf
+        
+        # Ordenação
+        if ordem_sort == "A-Z": lista_final.sort(key=lambda x: x['Produto'].lower())
+        elif ordem_sort == "Z-A": lista_final.sort(key=lambda x: x['Produto'].lower(), reverse=True)
+        elif ordem_sort == "Maior Margem": lista_final.sort(key=lambda x: x['_mrg'], reverse=True)
+        elif ordem_sort == "Menor Margem": lista_final.sort(key=lambda x: x['_mrg'])
+        elif ordem_sort == "Maior Preço": lista_final.sort(key=lambda x: x['_prc'], reverse=True)
+        else: lista_final.reverse()
+
+    if lista_final:
+        if selecao_busca: st.markdown(f"### Resultado ({len(lista_final)})")
+        else: st.markdown(f"### Estoque ({len(lista_final)})")
+
+        for item in lista_final:
+            # Cálculos de Exibição
+            preco_base_calc = item['PrecoBase']
+            desc_calc = item['DescontoPct']
+            preco_final_calc = preco_base_calc * (1 - (desc_calc / 100))
+            
+            nome_frete_real, valor_frete_real = identificar_faixa_frete(preco_final_calc)
+            if nome_frete_real == "manual": valor_frete_real = item['FreteManual']
+            
+            imposto_val = preco_final_calc * (imposto_padrao / 100)
+            comissao_val = preco_final_calc * (item['TaxaML'] / 100)
+            custos_totais = item['CMV'] + item['Extra'] + valor_frete_real + imposto_val + comissao_val
+            lucro_final = preco_final_calc - custos_totais + item['Bonus']
+            margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
+            
+            # Cores
+            if margem_final < 8.0: pill_cls = "pill-red"
+            elif 8.0 <= margem_final < 15.0: pill_cls = "pill-yellow"
+            else: pill_cls = "pill-green"
+
+            txt_pill = f"{margem_final:.1f}%"
+            txt_lucro = f"R$ {lucro_final:.2f}"
+            if lucro_final > 0: txt_lucro = "+ " + txt_lucro
+            
+            sku_show = item.get('SKU', '')
+            
+            st.markdown(f"""
+            <div class="feed-card">
+                <div class="card-header">
+                    <div>
+                        <div class="sku-text">{item['MLB']} {sku_show}</div>
+                        <div class="title-text">{item['Produto']}</div>
+                    </div>
+                    <div class="{pill_cls} pill">{txt_pill}</div>
+                </div>
+                <div class="card-body">
+                    <div style="font-size: 11px; color:#888; font-weight:600;">PREÇO DE VENDA</div>
+                    <div class="price-hero">R$ {preco_final_calc:.2f}</div>
+                    <div style="font-size: 13px; color:#555;">Lucro Líquido: <b>{txt_lucro}</b></div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
+
+            with st.expander("⚙️ Editar e Detalhes"):
+                # Achar índice real
+                real_idx = -1
+                for i, org in enumerate(st.session_state.lista_produtos):
+                    if org['id'] == item['id']: real_idx = i; break
+                
+                if real_idx != -1:
+                    def up_field(k, f, i=real_idx): st.session_state.lista_produtos[i][f] = st.session_state[k]
+
+                    ec1, ec2, ec3 = st.columns(3)
+                    ec1.number_input("Preço Tabela", value=float(item['PrecoBase']), step=0.5, key=f"p_{item['id']}", on_change=up_field, args=(f"p_{item['id']}", 'PrecoBase'))
+                    ec2.number_input("Desconto %", value=float(item['DescontoPct']), step=0.5, key=f"d_{item['id']}", on_change=up_field, args=(f"d_{item['id']}", 'DescontoPct'))
+                    ec3.number_input("Rebate R$", value=float(item['Bonus']), step=0.01, key=f"b_{item['id']}", on_change=up_field, args=(f"b_{item['id']}", 'Bonus'))
+                    
+                    st.divider()
+                    
+                    # DRE Simples
+                    r1, r2 = st.columns([3, 1])
+                    r1.write("(+) Preço Tabela")
+                    r2.write(f"R$ {item['PrecoBase']:.2f}")
+                    if item['DescontoPct'] > 0:
+                        r1, r2 = st.columns([3, 1])
+                        r1.markdown(f":red[(-) Desconto ({item['DescontoPct']}%) ]")
+                        r2.markdown(f":red[- R$ {item['PrecoBase'] - preco_final_calc:.2f}]")
+                    st.markdown("---")
+                    r1, r2 = st.columns([3, 1])
+                    r1.markdown("**(=) RECEITA BRUTA**")
+                    r2.markdown(f"**R$ {preco_final_calc:.2f}**")
+                    st.write("") 
+                    
+                    custos = [
+                        (f"Impostos ({imposto_padrao}%)", imposto_val),
+                        (f"Comissão ({item['TaxaML']}%)", comissao_val),
+                        (f"Frete ({nome_frete_real})", valor_frete_real),
+                        ("Custo CMV", item['CMV']), ("Extras", item['Extra'])
+                    ]
+                    for lbl, val in custos:
+                        c_lbl, c_val = st.columns([3, 1])
+                        c_lbl.caption(f"(-) {lbl}")
+                        c_val.caption(f"- R$ {val:.2f}")
+                    
+                    if item['Bonus'] > 0:
+                        st.write("")
+                        r1, r2 = st.columns([3, 1])
+                        r1.markdown(":green[(+) Rebate / Bônus]")
+                        r2.markdown(f":green[+ R$ {item['Bonus']:.2f}]")
+                    
+                    st.write("")
+                    box_style = "background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5;"
+                    if margem_final < 8: box_style = "background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2;"
+                    elif margem_final < 15: box_style = "background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D;"
+
+                    st.markdown(f"""
+                    <div style="{box_style} padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 700; font-size: 14px;">LUCRO LÍQUIDO</span>
+                        <span style="font-weight: 800; font-size: 18px;">R$ {lucro_final:.2f}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.write("")
+                    if st.button("Remover Item", key=f"del_{item['id']}"):
+                        del st.session_state.lista_produtos[real_idx]
+                        reiniciar_app()
+
+        # Footer
+        st.divider()
+        col_d, col_c = st.columns(2)
+        df_final = pd.DataFrame(lista_final) # Exporta o que está vendo
+        csv = df_final.to_csv(index=False).encode('utf-8')
+        col_d.download_button("📥 Baixar Excel", csv, "precificacao_2026.csv", "text/csv", use_container_width=True)
+        def limpar_tudo(): st.session_state.lista_produtos = []
+        col_c.button("🗑️ Limpar Tudo", on_click=limpar_tudo, use_container_width=True)
+    else:
         st.markdown("""
         <div style="text-align: center; color: #BBB; padding: 40px;">
             <h3 style="color: #DDD;">Lista Vazia</h3>
-            Preencha os dados acima.
+            Adicione produtos para começar.
         </div>
         """, unsafe_allow_html=True)
+
+# --- ABA 2: DASHBOARDS (NOVO) ---
+with tab_dashboard:
+    
+    if len(st.session_state.lista_produtos) > 0:
+        # Preparação dos Dados para Analytics
+        rows = []
+        for item in st.session_state.lista_produtos:
+            # Recalcula tudo para garantir precisão
+            pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
+            _, fr = identificar_faixa_frete(pf)
+            if _ == "manual": fr = item['FreteManual']
+            
+            imp = pf * (imposto_padrao/100)
+            com = pf * (item['TaxaML']/100)
+            custo_total = item['CMV'] + item['Extra'] + fr + imp + com
+            lucro = pf - custo_total + item['Bonus']
+            margem = (lucro/pf*100) if pf else 0
+            
+            rows.append({
+                "Produto": item['Produto'],
+                "Margem %": margem,
+                "Lucro R$": lucro,
+                "Preço Venda": pf,
+                "Custo CMV": item['CMV'],
+                "Comissão ML": com,
+                "Impostos": imp,
+                "Frete": fr
+            })
+        
+        df_dash = pd.DataFrame(rows)
+        
+        # --- KPI's ---
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Produtos Analisados", len(df_dash))
+        k2.metric("Margem Média", f"{df_dash['Margem %'].mean():.1f}%")
+        k3.metric("Lucro Médio/Un", f"R$ {df_dash['Lucro R$'].mean():.2f}")
+        
+        st.divider()
+        
+        # --- GRÁFICO 1: Distribuição de Margem (Semáforo) ---
+        st.subheader("1. Saúde do Portfólio (Semáforo)")
+        
+        # Criar categorias
+        bins = [-1000, 7.99, 14.99, 1000]
+        labels = ['Crítico (<8%)', 'Atenção (8-15%)', 'Saudável (>15%)']
+        df_dash['Status'] = pd.cut(df_dash['Margem %'], bins=bins, labels=labels)
+        
+        counts = df_dash['Status'].value_counts().reset_index()
+        counts.columns = ['Status', 'Qtd']
+        
+        fig1 = px.bar(counts, x='Status', y='Qtd', color='Status', 
+                      color_discrete_map={'Crítico (<8%)': '#EF4444', 'Atenção (8-15%)': '#F59E0B', 'Saudável (>15%)': '#10B981'},
+                      text='Qtd')
+        fig1.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+        st.plotly_chart(fig1, use_container_width=True)
+        
+        c_chart1, c_chart2 = st.columns(2)
+        
+        with c_chart1:
+            st.subheader("2. Matriz de Eficiência")
+            st.caption("Custo (CMV) x Lucro Real")
+            fig2 = px.scatter(df_dash, x="Custo CMV", y="Lucro R$", color="Status", hover_name="Produto",
+                              color_discrete_map={'Crítico (<8%)': '#EF4444', 'Atenção (8-15%)': '#F59E0B', 'Saudável (>15%)': '#10B981'})
+            st.plotly_chart(fig2, use_container_width=True)
+            
+        with c_chart2:
+            st.subheader("3. Para onde vai o dinheiro?")
+            # Soma totais
+            totais = df_dash[['Custo CMV', 'Comissão ML', 'Impostos', 'Frete', 'Lucro R$']].sum().reset_index()
+            totais.columns = ['Tipo', 'Valor']
+            # Remove lucro negativo para não quebrar o gráfico de pizza
+            totais['Valor'] = totais['Valor'].apply(lambda x: max(0, x))
+            
+            fig3 = px.pie(totais, values='Valor', names='Tipo', hole=0.4,
+                          color_discrete_sequence=px.colors.qualitative.Pastel)
+            st.plotly_chart(fig3, use_container_width=True)
+            
+    else:
+        st.info("Adicione produtos na aba 'Precificador' para ver os gráficos.")
