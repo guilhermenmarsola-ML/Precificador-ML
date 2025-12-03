@@ -3,10 +3,10 @@ import pandas as pd
 import time
 import re
 
-# --- 1. CONFIGURAÇÃO ---
-st.set_page_config(page_title="Precificador 2026 - Mapeamento", layout="centered", page_icon="💎")
+# --- 1. CONFIGURAÇÃO (APP SHELL) ---
+st.set_page_config(page_title="Precificador 2026 - Import ERP", layout="centered", page_icon="💎")
 
-# --- 2. ESTADO ---
+# --- 2. ESTADO (MEMORY) ---
 if 'lista_produtos' not in st.session_state:
     st.session_state.lista_produtos = []
 
@@ -51,18 +51,10 @@ def limpar_valor_dinheiro(valor):
     if pd.isna(valor) or valor == "" or valor == "-": return 0.0
     if isinstance(valor, (int, float)): return float(valor)
     valor_str = str(valor).strip()
-    # Remove R$, espaços e caracteres que não sejam numeros, virgula, ponto ou traço
     valor_str = re.sub(r'[^\d,\.-]', '', valor_str)
     if not valor_str: return 0.0
-    
-    # Lógica Brasil (1.200,00) vs EUA (1,200.00)
-    # Se tem vírgula no final (ex: ,00 ou ,5), é decimal Brasil
-    if ',' in valor_str:
-        if valor_str.count('.') > 0: # Tem ponto de milhar (1.500,00)
-            valor_str = valor_str.replace('.', '').replace(',', '.')
-        else: # Só tem virgula (1500,00)
-            valor_str = valor_str.replace(',', '.')
-            
+    if ',' in valor_str and '.' in valor_str: valor_str = valor_str.replace('.', '').replace(',', '.') 
+    elif ',' in valor_str: valor_str = valor_str.replace(',', '.')
     try: return float(valor_str)
     except: return 0.0
 
@@ -82,7 +74,7 @@ with st.sidebar:
         taxa_minima = st.number_input("Min", value=3.25)
     st.divider()
     
-    # --- ÁREA DE IMPORTAÇÃO (MAPEAMENTO MANUAL) ---
+    # --- ÁREA DE IMPORTAÇÃO (ATUALIZADA COM ERP) ---
     st.markdown("### 📂 Importar Planilha")
     uploaded_file = st.file_uploader("Arraste seu Excel", type=['xlsx'])
     
@@ -92,48 +84,47 @@ with st.sidebar:
             aba_selecionada = st.selectbox("1. Selecione a aba:", xl.sheet_names, index=0)
             header_row = st.number_input("2. Linha do Cabeçalho (Teste 8 ou 9):", value=8, min_value=0, step=1)
             
-            # Carrega prévia
             df_preview = xl.parse(aba_selecionada, header=header_row, nrows=5)
-            
-            # Limpa colunas vazias ou sem nome
             cols_validas = [c for c in df_preview.columns if "Unnamed" not in str(c)]
             
             st.write("---")
-            st.caption("3. Mapeie as Colunas (Selecione a coluna correspondente):")
+            st.caption("3. Mapeie as Colunas:")
             
-            # Função para tentar adivinhar o indice padrão
-            def get_idx(options, keyword):
+            def get_idx(options, keywords):
+                if isinstance(keywords, str): keywords = [keywords]
                 for i, opt in enumerate(options):
-                    if keyword.lower() in str(opt).lower(): return i
+                    for k in keywords:
+                        if k.lower() in str(opt).lower(): return i
                 return 0
 
-            # SELETORES DE MAPEAMENTO
-            col_nome = st.selectbox("Nome do Produto", cols_validas, index=get_idx(cols_validas, "Produto"))
-            col_mlb = st.selectbox("Código / MLB / Anúncio", cols_validas, index=get_idx(cols_validas, "Anúncio"))
-            col_cmv = st.selectbox("Custo (CMV)", cols_validas, index=get_idx(cols_validas, "CMV"))
-            col_preco = st.selectbox("Preço de Venda (Usado)", cols_validas, index=get_idx(cols_validas, "Preço Usado"))
-            col_frete = st.selectbox("Frete Manual (>79)", cols_validas, index=get_idx(cols_validas, "Frete do anúncio"))
-            col_taxa = st.selectbox("Taxa ML (%)", cols_validas, index=get_idx(cols_validas, "TX ML"))
-            col_desc = st.selectbox("Desconto (%)", cols_validas, index=get_idx(cols_validas, "Desconto"))
-            col_bonus = st.selectbox("Bônus / Rebate", cols_validas, index=get_idx(cols_validas, "Bônus"))
+            # SELETORES
+            col_nome = st.selectbox("Nome do Produto", cols_validas, index=get_idx(cols_validas, ["Produto", "Nome", "Descrição"]))
+            col_mlb = st.selectbox("Código / MLB", cols_validas, index=get_idx(cols_validas, ["Anúncio", "MLB", "ID"]))
+            col_cmv = st.selectbox("Custo (CMV)", cols_validas, index=get_idx(cols_validas, ["CMV", "Custo"]))
             
-            st.info(f"Prévia do Preço lido: {df_preview[col_preco].iloc[0]}")
-
-            if st.button("✅ Importar com este Mapeamento", type="primary"):
-                # Lê o arquivo inteiro
+            # NOVO CAMPO: PREÇO ERP
+            col_erp = st.selectbox("Preço ERP / GRA / Base", cols_validas, index=get_idx(cols_validas, ["GRA", "ERP", "Base", "Tabela"]))
+            
+            col_preco = st.selectbox("Preço Venda (Praticado)", cols_validas, index=get_idx(cols_validas, ["Preço Usado", "Venda", "Preço"]))
+            col_frete = st.selectbox("Frete Manual (>79)", cols_validas, index=get_idx(cols_validas, ["Frete do anúncio", "Frete"]))
+            col_taxa = st.selectbox("Taxa ML (%)", cols_validas, index=get_idx(cols_validas, ["TX ML", "Comissão"]))
+            col_desc = st.selectbox("Desconto (%)", cols_validas, index=get_idx(cols_validas, ["Desconto", "%"]))
+            col_bonus = st.selectbox("Bônus / Rebate", cols_validas, index=get_idx(cols_validas, ["Bônus", "Rebate"]))
+            
+            if st.button("✅ Importar", type="primary"):
                 df = xl.parse(aba_selecionada, header=header_row)
                 count = 0
                 
                 for index, row in df.iterrows():
                     try:
-                        # Pega valores brutos baseado na escolha do usuário
                         produto = str(row[col_nome])
                         if not produto or produto == 'nan': continue
 
                         mlb = str(row[col_mlb])
                         
-                        # Limpeza Pesada nos Valores
+                        # Valores
                         cmv = limpar_valor_dinheiro(row[col_cmv])
+                        preco_erp = limpar_valor_dinheiro(row[col_erp]) # IMPORTANDO ERP
                         preco_base = limpar_valor_dinheiro(row[col_preco])
                         frete = limpar_valor_dinheiro(row[col_frete])
                         tx_ml = limpar_valor_dinheiro(row[col_taxa])
@@ -143,6 +134,7 @@ with st.sidebar:
                         # Defaults
                         if frete == 0: frete = 18.86
                         if tx_ml == 0: tx_ml = 16.5
+                        if preco_erp == 0: preco_erp = preco_base # Fallback se não tiver ERP
 
                         novo_item = {
                             "id": int(time.time() * 1000) + index,
@@ -153,7 +145,8 @@ with st.sidebar:
                             "FreteManual": frete,
                             "TaxaML": tx_ml,
                             "Extra": 0.0,
-                            "PrecoERP": 0.0, "MargemERP": 0.0,
+                            "PrecoERP": preco_erp, # SALVANDO ERP
+                            "MargemERP": st.session_state.n_merp, # Usa a margem global definida no sidebar
                             "PrecoBase": preco_base,
                             "DescontoPct": desc,
                             "Bonus": bonus
@@ -162,7 +155,7 @@ with st.sidebar:
                         count += 1
                     except: continue
                 
-                st.toast(f"{count} produtos importados!", icon="🚀")
+                st.toast(f"{count} importados!", icon="🚀")
                 time.sleep(1)
                 reiniciar_app()
                 
@@ -329,6 +322,15 @@ if st.session_state.lista_produtos:
             def update_item(idx=i, key_id=item['id'], field=None, key_st=None):
                 st.session_state.lista_produtos[idx][field] = st.session_state[key_st]
 
+            # Destaque para o ERP e Edição
+            c_erp1, c_erp2 = st.columns(2)
+            c_erp1.number_input("Preço ERP", value=float(item['PrecoERP']), step=0.5, key=f"erp_{item['id']}", 
+                                on_change=update_item, args=(i, item['id'], 'PrecoERP', f"erp_{item['id']}"))
+            c_erp2.number_input("Margem ERP %", value=float(item['MargemERP']), step=1.0, key=f"merp_{item['id']}", 
+                                on_change=update_item, args=(i, item['id'], 'MargemERP', f"merp_{item['id']}"))
+            
+            st.write("")
+            
             ec1, ec2, ec3 = st.columns(3)
             ec1.number_input("Preço Tabela", value=float(item['PrecoBase']), step=0.5, key=f"pb_{item['id']}", 
                              on_change=update_item, args=(i, item['id'], 'PrecoBase', f"pb_{item['id']}"))
