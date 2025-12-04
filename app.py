@@ -3,17 +3,17 @@ import pandas as pd
 import time
 import re
 
-# --- 1. CONFIGURAÇÃO ---
-st.set_page_config(page_title="Precificador 2026 - V53 Safe", layout="centered", page_icon="💎")
+# --- 1. CONFIGURAÇÃO (APP SHELL) ---
+st.set_page_config(page_title="Precificador 2026 - V54 Complete", layout="centered", page_icon="💎")
 
-# Verifica bibliotecas opcionais
+# Tenta importar Plotly
 try:
     import plotly.express as px
     has_plotly = True
 except ImportError:
     has_plotly = False
 
-# --- 2. ESTADO ---
+# --- 2. ESTADO (MEMORY) ---
 if 'lista_produtos' not in st.session_state:
     st.session_state.lista_produtos = []
 
@@ -31,42 +31,52 @@ init_state('n_taxa', 16.5)
 init_state('n_erp', 85.44)
 init_state('n_merp', 20.0)
 
-# --- 3. CSS ---
+# --- 3. CSS (DESIGN SYSTEM) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
     .stApp { background-color: #FAFAFA; font-family: 'Inter', sans-serif; }
     
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
+    .stTabs [data-baseweb="tab"] { background-color: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
+    .stTabs [aria-selected="true"] { background-color: #2563EB !important; color: white !important; }
+
+    /* Cards */
     .input-card { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #EFEFEF; margin-bottom: 20px; }
     .feed-card { background: white; border-radius: 16px; border: 1px solid #DBDBDB; box-shadow: 0 2px 5px rgba(0,0,0,0.02); margin-bottom: 15px; overflow: hidden; }
     .card-header { padding: 15px 20px; border-bottom: 1px solid #F0F0F0; display: flex; justify-content: space-between; align-items: center; }
     .card-body { padding: 20px; text-align: center; }
 
+    /* Tipografia */
     .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
     .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
     .price-hero { font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0; }
     
+    /* Pills */
     .pill { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; display: inline-block; }
     .pill-green { background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5; }
     .pill-yellow { background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D; }
     .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
 
     div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input { background-color: #FAFAFA !important; border: 1px solid #E5E5E5 !important; color: #333 !important; border-radius: 8px !important; }
-    div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border-radius: 10px; height: 50px; border: none; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
+    div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border-radius: 10px; height: 50px; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); border: none; }
+    
+    /* Search Bar */
+    div[data-testid="stSelectbox"] > div > div { background-color: white !important; border: 1px solid #2563EB !important; border-radius: 12px !important; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.1); }
 </style>
 """, unsafe_allow_html=True)
 
 # --- 4. FUNÇÕES ---
 def limpar_valor_dinheiro(valor):
-    try:
-        if pd.isna(valor) or str(valor).strip() == "" or str(valor).strip() == "-": return 0.0
-        if isinstance(valor, (int, float)): return float(valor)
-        valor_str = str(valor).strip()
-        valor_str = re.sub(r'[^\d,\.-]', '', valor_str)
-        if not valor_str: return 0.0
-        if ',' in valor_str and '.' in valor_str: valor_str = valor_str.replace('.', '').replace(',', '.') 
-        elif ',' in valor_str: valor_str = valor_str.replace(',', '.')
-        return float(valor_str)
+    if pd.isna(valor) or valor == "" or valor == "-": return 0.0
+    if isinstance(valor, (int, float)): return float(valor)
+    valor_str = str(valor).strip()
+    valor_str = re.sub(r'[^\d,\.-]', '', valor_str)
+    if not valor_str: return 0.0
+    if ',' in valor_str and '.' in valor_str: valor_str = valor_str.replace('.', '').replace(',', '.') 
+    elif ',' in valor_str: valor_str = valor_str.replace(',', '.')
+    try: return float(valor_str)
     except: return 0.0
 
 def reiniciar_app():
@@ -107,21 +117,18 @@ with st.sidebar:
                 return 0
 
             c_prod = st.selectbox("Produto", cols, index=get_idx(cols, ["Produto", "Nome"]))
+            c_mlb = st.selectbox("MLB", cols, index=get_idx(cols, ["Anúncio", "MLB"]))
+            c_sku = st.selectbox("SKU", cols, index=get_idx(cols, ["SKU", "Ref"]))
             c_cmv = st.selectbox("CMV", cols, index=get_idx(cols, "CMV"))
             c_prc = st.selectbox("Preço Venda", cols, index=get_idx(cols, ["Preço", "Venda"]))
             c_erp = st.selectbox("Preço ERP", cols, index=get_idx(cols, ["ERP", "Base", "GRA"]))
-            c_mlb = st.selectbox("MLB", cols, index=get_idx(cols, ["Anúncio", "MLB"]))
-            
-            # Novos Mapeamentos
             c_desc = st.selectbox("Desconto %", cols, index=get_idx(cols, ["Desconto", "%"]))
             c_bonus = st.selectbox("Rebate/Bônus", cols, index=get_idx(cols, ["Bônus", "Rebate", "Bonus"]))
             
             if st.button("✅ Importar", type="primary"):
                 df = xl.parse(aba_selecionada, header=header_row)
                 cnt = 0
-                err = 0
                 st.session_state.lista_produtos = []
-                
                 for _, row in df.iterrows():
                     try:
                         p = str(row[c_prod])
@@ -135,13 +142,15 @@ with st.sidebar:
                         desc = limpar_valor_dinheiro(row[c_desc])
                         bonus = limpar_valor_dinheiro(row[c_bonus])
                         
-                        # Correção Decimal Excel
                         if 0 < desc < 1.0: desc = desc * 100
                         
+                        sku_val = str(row[c_sku]) if c_sku in row else ""
+                        if sku_val == 'nan': sku_val = ""
+
                         st.session_state.lista_produtos.append({
                             "id": int(time.time()*1000)+_, 
                             "MLB": str(row[c_mlb]), 
-                            "SKU": "", 
+                            "SKU": sku_val, 
                             "Produto": p,
                             "CMV": cmv, 
                             "FreteManual": 18.86, 
@@ -154,17 +163,10 @@ with st.sidebar:
                             "Bonus": bonus       
                         })
                         cnt += 1
-                    except: 
-                        err += 1
-                        continue
-                
-                if cnt > 0:
-                    st.toast(f"{cnt} importados!", icon="🚀")
-                    time.sleep(1)
-                    reiniciar_app()
-                else:
-                    st.error("Nenhum produto importado. Verifique a linha do cabeçalho.")
-                    
+                    except: continue
+                st.toast(f"{cnt} importados!", icon="🚀")
+                time.sleep(1)
+                reiniciar_app()
         except Exception as e: st.error(f"Erro: {e}")
 
 # --- 6. LÓGICA ---
@@ -212,7 +214,7 @@ def adicionar_produto_action():
     st.session_state.n_extra = 0.00
 
 # ==============================================================================
-# 7. INTERFACE PRINCIPAL
+# 7. LAYOUT PRINCIPAL
 # ==============================================================================
 
 st.markdown('<div style="text-align:center; padding-bottom:10px;">', unsafe_allow_html=True)
@@ -292,7 +294,6 @@ with tab_op:
             
             txt_pill = f"{mrg:.1f}%"
             txt_luc = f"+ R$ {luc:.2f}" if luc > 0 else f"- R$ {abs(luc):.2f}"
-            
             sku_show = item.get('SKU', '')
             
             st.markdown(f"""
@@ -309,17 +310,72 @@ with tab_op:
             </div>
             """, unsafe_allow_html=True)
             
-            with st.expander("⚙️ Editar"):
+            # --- ÁREA DE DETALHES/EDIÇÃO COM DRE RESTAURADA ---
+            with st.expander("⚙️ Editar e Detalhes Financeiros"):
                 real_idx = next((i for i, x in enumerate(st.session_state.lista_produtos) if x['id'] == item['id']), -1)
                 if real_idx != -1:
                     def up_f(k, f, i=real_idx): st.session_state.lista_produtos[i][f] = st.session_state[k]
-                    c1, c2, c3 = st.columns(3)
-                    c1.number_input("Preço", value=float(item['PrecoBase']), key=f"p{item['id']}", on_change=up_f, args=(f"p{item['id']}", 'PrecoBase'))
-                    c2.number_input("Desc %", value=float(item['DescontoPct']), key=f"d{item['id']}", on_change=up_f, args=(f"d{item['id']}", 'DescontoPct'))
-                    c3.number_input("Bônus", value=float(item['Bonus']), key=f"b{item['id']}", on_change=up_f, args=(f"b{item['id']}", 'Bonus'))
+                    
+                    st.caption("AJUSTES")
+                    ec1, ec2, ec3 = st.columns(3)
+                    ec1.number_input("Preço Tabela", value=float(item['PrecoBase']), key=f"p{item['id']}", on_change=up_f, args=(f"p{item['id']}", 'PrecoBase'))
+                    ec2.number_input("Desc %", value=float(item['DescontoPct']), key=f"d{item['id']}", on_change=up_f, args=(f"d{item['id']}", 'DescontoPct'))
+                    ec3.number_input("Bônus", value=float(item['Bonus']), key=f"b{item['id']}", on_change=up_f, args=(f"b{item['id']}", 'Bonus'))
                     
                     st.divider()
-                    st.caption(f"Custos: Impostos R$ {imp:.2f} | ML R$ {com:.2f} | Frete ({_}) R$ {fr:.2f}")
+                    
+                    # --- DRE VISUAL COMPLETA (RESTAURADA) ---
+                    st.caption("EXTRATO FINANCEIRO (DRE)")
+                    
+                    d1, d2 = st.columns([3, 1])
+                    d1.write("(+) Preço Tabela")
+                    d2.write(f"R$ {item['PrecoBase']:.2f}")
+                    
+                    if item['DescontoPct'] > 0:
+                        d1, d2 = st.columns([3, 1])
+                        d1.markdown(f":red[(-) Desconto ({item['DescontoPct']}%) ]")
+                        d2.markdown(f":red[- R$ {item['PrecoBase'] - pf:.2f}]")
+                    
+                    st.markdown("---")
+                    d1, d2 = st.columns([3, 1])
+                    d1.markdown("**(=) RECEITA BRUTA**")
+                    d2.markdown(f"**R$ {pf:.2f}**")
+                    st.write("")
+                    
+                    cust_list = [
+                        (f"Impostos ({imposto_padrao}%)", imp),
+                        (f"Comissão ML ({item['TaxaML']}%)", com),
+                        (f"Frete ({fr})", fr),
+                        ("Custo CMV", item['CMV']),
+                        ("Extras", item['Extra'])
+                    ]
+                    
+                    for lbl, val in cust_list:
+                        d1, d2 = st.columns([3, 1])
+                        d1.caption(f"(-) {lbl}")
+                        d2.caption(f"- R$ {val:.2f}")
+                        
+                    if item['Bonus'] > 0:
+                        st.write("")
+                        d1, d2 = st.columns([3, 1])
+                        d1.markdown(":green[(+) Rebate / Bônus]")
+                        d2.markdown(f":green[+ R$ {item['Bonus']:.2f}]")
+                        
+                    st.divider()
+                    
+                    # Box Final de Resultado dentro da DRE
+                    box_style = "background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5;"
+                    if mrg < 8: box_style = "background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2;"
+                    elif mrg < 15: box_style = "background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D;"
+
+                    st.markdown(f"""
+                    <div style="{box_style} padding: 15px; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 700; font-size: 14px;">LUCRO LÍQUIDO</span>
+                        <span style="font-weight: 800; font-size: 18px;">R$ {luc:.2f}</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.write("")
                     if st.button("🗑️ Excluir", key=f"del{item['id']}"):
                         del st.session_state.lista_produtos[real_idx]
                         reiniciar_app()
@@ -342,12 +398,10 @@ with tab_op:
         
         df_export = pd.DataFrame(csv_data)
         csv_file = df_export.to_csv(index=False).encode('utf-8')
-        # CORREÇÃO: REMOVIDO use_container_width=True do download_button
         col_d.download_button("📥 Baixar Relatório Excel", csv_file, "precificacao.csv", "text/csv")
         
         def limpar_tudo_action(): st.session_state.lista_produtos = []
-        # CORREÇÃO: REMOVIDO use_container_width=True do button
-        col_c.button("🗑️ Limpar Tudo", on_click=limpar_tudo_action)
+        col_c.button("🗑️ LIMPAR TUDO", on_click=limpar_tudo_action, type="secondary")
         
     else:
         if not selecao_busca: st.info("Lista vazia.")
