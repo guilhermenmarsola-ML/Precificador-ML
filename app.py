@@ -2,9 +2,13 @@ import streamlit as st
 import pandas as pd
 import time
 import re
+import os
 
-# --- 1. CONFIGURAÇÃO ---
-st.set_page_config(page_title="Precificador 2026 - V61 Stable", layout="centered", page_icon="💎")
+# --- 1. CONFIGURAÇÃO (APP SHELL) ---
+st.set_page_config(page_title="Precificador 2026 - V62 AutoSave", layout="centered", page_icon="💎")
+
+# NOME DO ARQUIVO DE BANCO DE DADOS
+DB_FILE = "banco_dados.csv"
 
 # Tenta importar Plotly
 try:
@@ -13,26 +17,41 @@ try:
 except ImportError:
     has_plotly = False
 
-# --- 2. ESTADO ---
+# --- 2. SISTEMA DE BANCO DE DADOS (NOVO) ---
+
+def carregar_dados():
+    """Lê o arquivo CSV ao iniciar o app"""
+    if os.path.exists(DB_FILE):
+        try:
+            return pd.read_csv(DB_FILE).to_dict('records')
+        except:
+            return []
+    return []
+
+def salvar_dados():
+    """Salva a lista atual no arquivo CSV"""
+    if st.session_state.lista_produtos:
+        df = pd.DataFrame(st.session_state.lista_produtos)
+        df.to_csv(DB_FILE, index=False)
+    else:
+        # Se a lista estiver vazia, cria um CSV vazio com cabeçalho ou apaga
+        if os.path.exists(DB_FILE):
+            os.remove(DB_FILE) # Ou salva vazio
+
+# INICIALIZAÇÃO (Carrega do disco se a memória estiver vazia)
 if 'lista_produtos' not in st.session_state:
-    st.session_state.lista_produtos = []
+    st.session_state.lista_produtos = carregar_dados()
+
+# Função auxiliar para salvar e recarregar
+def persistir_e_recarregar():
+    salvar_dados()
+    time.sleep(0.1)
+    if hasattr(st, 'rerun'): st.rerun()
+    else: st.experimental_rerun()
 
 def init_state(key, value):
     if key not in st.session_state:
         st.session_state[key] = value
-
-# Garante integridade dos dados (Auto-Repair)
-def normalizar_dados():
-    if st.session_state.lista_produtos:
-        for item in st.session_state.lista_produtos:
-            if 'PrecoERP' not in item: item['PrecoERP'] = 0.0
-            if 'MargemERP' not in item: item['MargemERP'] = 0.0
-            if 'SKU' not in item: item['SKU'] = ""
-            if 'Bonus' not in item: item['Bonus'] = 0.0
-            if 'DescontoPct' not in item: item['DescontoPct'] = 0.0
-            if 'Extra' not in item: item['Extra'] = 0.0
-
-normalizar_dados()
 
 # Variáveis
 init_state('n_mlb', '') 
@@ -45,7 +64,7 @@ init_state('n_taxa', 16.5)
 init_state('n_erp', 85.44)
 init_state('n_merp', 20.0)
 
-# --- 3. DESIGN SYSTEM ---
+# --- 3. CSS ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
@@ -55,7 +74,10 @@ st.markdown("""
     .feed-card { background: white; border-radius: 16px; border: 1px solid #DBDBDB; box-shadow: 0 2px 5px rgba(0,0,0,0.02); margin-bottom: 15px; overflow: hidden; }
     .card-header { padding: 15px 20px; border-bottom: 1px solid #F0F0F0; display: flex; justify-content: space-between; align-items: center; }
     .card-body { padding: 20px; text-align: center; }
-    
+    .card-footer { background-color: #F8F9FA; padding: 10px 20px; border-top: 1px solid #F0F0F0; display: flex; justify-content: space-between; font-size: 11px; color: #666; }
+    .margin-box { text-align: center; flex: 1; }
+    .margin-val { font-weight: 700; font-size: 12px; color: #333; }
+
     .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
     .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
     .price-hero { font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0; }
@@ -72,11 +94,6 @@ st.markdown("""
     div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input { background-color: #FAFAFA !important; border: 1px solid #E5E5E5 !important; color: #333 !important; border-radius: 8px !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border-radius: 10px; height: 50px; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
     div[data-testid="stSelectbox"] > div > div { background-color: white !important; border: 1px solid #2563EB !important; border-radius: 12px !important; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.1); }
-    
-    /* Footer Card */
-    .card-footer { background-color: #F8F9FA; padding: 10px 20px; border-top: 1px solid #F0F0F0; display: flex; justify-content: space-between; font-size: 11px; color: #666; }
-    .margin-box { text-align: center; flex: 1; }
-    .margin-val { font-weight: 700; font-size: 12px; color: #333; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -93,23 +110,18 @@ def limpar_valor_dinheiro(valor):
         return float(valor_str)
     except: return 0.0
 
-def reiniciar_app():
-    time.sleep(0.1)
-    if hasattr(st, 'rerun'): st.rerun()
-    else: st.experimental_rerun()
-
 # --- 5. SIDEBAR ---
 with st.sidebar:
     st.header("Ajustes")
     imposto_padrao = st.number_input("Impostos (%)", value=27.0, step=0.5)
-    with st.expander("Tabela Frete ML (<79)", expanded=True):
+    with st.expander("Frete ML (<79)", expanded=True):
         taxa_12_29 = st.number_input("12-29", value=6.25)
         taxa_29_50 = st.number_input("29-50", value=6.50)
         taxa_50_79 = st.number_input("50-79", value=6.75)
         taxa_minima = st.number_input("Min", value=3.25)
     st.divider()
     
-    # IMPORTAÇÃO
+    # --- IMPORTAÇÃO ---
     st.markdown("### 📂 Importar")
     uploaded_file = st.file_uploader("Excel/CSV", type=['xlsx', 'csv'])
     
@@ -147,32 +159,25 @@ with st.sidebar:
                     try:
                         p = str(row[c_prod])
                         if not p or p == 'nan': continue
-                        
                         cmv = limpar_valor_dinheiro(row[c_cmv])
                         pb = limpar_valor_dinheiro(row[c_prc])
                         erp = limpar_valor_dinheiro(row[c_erp])
                         if erp == 0: erp = pb
-                        
                         desc = limpar_valor_dinheiro(row[c_desc])
                         bonus = limpar_valor_dinheiro(row[c_bonus])
-                        
                         if 0 < desc < 1.0: desc = desc * 100
-                        
                         sku_val = str(row[c_sku]) if c_sku in row else ""
                         if sku_val == 'nan': sku_val = ""
 
                         st.session_state.lista_produtos.append({
-                            "id": int(time.time()*1000)+_, 
-                            "MLB": str(row[c_mlb]), "SKU": sku_val, "Produto": p,
-                            "CMV": cmv, "FreteManual": 18.86, "TaxaML": 16.5, 
-                            "Extra": 0.0, "PrecoERP": erp, "MargemERP": st.session_state.n_merp, 
-                            "PrecoBase": pb, "DescontoPct": desc, "Bonus": bonus       
+                            "id": int(time.time()*1000)+_, "MLB": str(row[c_mlb]), "SKU": sku_val, "Produto": p,
+                            "CMV": cmv, "FreteManual": 18.86, "TaxaML": 16.5, "Extra": 0.0,
+                            "PrecoERP": erp, "MargemERP": 20.0, "PrecoBase": pb, "DescontoPct": desc, "Bonus": bonus       
                         })
                         cnt += 1
                     except: continue
                 st.toast(f"{cnt} importados!", icon="🚀")
-                time.sleep(1)
-                reiniciar_app()
+                persistir_e_recarregar() # Salva no DB
         except Exception as e: st.error(f"Erro: {e}")
 
 # --- 6. LÓGICA ---
@@ -218,6 +223,7 @@ def adicionar_produto_action():
     st.session_state.n_nome = ""
     st.session_state.n_cmv = 0.00
     st.session_state.n_extra = 0.00
+    persistir_e_recarregar() # SALVA NO DISCO
 
 # ==============================================================================
 # 7. INTERFACE PRINCIPAL
@@ -254,9 +260,8 @@ with tab_op:
             if _ == "manual": fr = item['FreteManual']
             luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
             mrg = (luc/pf*100) if pf else 0
-            # Safe get para PrecoERP
-            erp_safe = item.get('PrecoERP', 0.0)
-            mrg_erp = (luc/erp_safe*100) if erp_safe > 0 else 0
+            erp_val = item.get('PrecoERP', 0.0)
+            mrg_erp = (luc/erp_val*100) if erp_val > 0 else 0
             
             view_item = item.copy()
             view_item.update({'_pf': pf, '_luc': luc, '_mrg': mrg, '_mrg_erp': mrg_erp})
@@ -292,7 +297,6 @@ with tab_op:
     if lista_final:
         st.caption(f"Visualizando {len(lista_final)} produtos")
         for item in lista_final:
-            # CÁLCULO SEGURO
             pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
             nome_frete_real, valor_frete_real, motivo_frete = identificar_faixa_frete(pf)
             if nome_frete_real == "manual": valor_frete_real = item['FreteManual']
@@ -306,7 +310,6 @@ with tab_op:
             erp_val = item.get('PrecoERP', 0.0)
             margem_erp = (lucro_final / erp_val * 100) if erp_val > 0 else 0
             
-            # Cores
             if margem_venda < 8.0: pill_cls = "pill-red"
             elif 8.0 <= margem_venda < 15.0: pill_cls = "pill-yellow"
             else: pill_cls = "pill-green"
@@ -336,7 +339,11 @@ with tab_op:
             with st.expander("⚙️ Editar e Detalhes"):
                 real_idx = next((i for i, x in enumerate(st.session_state.lista_produtos) if x['id'] == item['id']), -1)
                 if real_idx != -1:
-                    def up_f(k, f, i=real_idx): st.session_state.lista_produtos[i][f] = st.session_state[k]
+                    # CALL BACKS
+                    def up_f(k, f, i=real_idx): 
+                        st.session_state.lista_produtos[i][f] = st.session_state[k]
+                        salvar_dados() # Auto Save
+
                     c1, c2, c3 = st.columns(3)
                     c1.number_input("Preço", value=float(item['PrecoBase']), key=f"p{item['id']}", on_change=up_f, args=(f"p{item['id']}", 'PrecoBase'))
                     c2.number_input("Desc %", value=float(item['DescontoPct']), key=f"d{item['id']}", on_change=up_f, args=(f"d{item['id']}", 'DescontoPct'))
@@ -366,11 +373,10 @@ with tab_op:
                     st.write("")
                     if st.button("🗑️ Excluir", key=f"del{item['id']}"):
                         del st.session_state.lista_produtos[real_idx]
-                        reiniciar_app()
+                        persistir_e_recarregar()
         
         st.markdown("---")
         col_d, col_c = st.columns([2, 1])
-        
         csv_data = []
         for it in st.session_state.lista_produtos:
             pf = it['PrecoBase'] * (1 - it['DescontoPct']/100)
@@ -383,48 +389,41 @@ with tab_op:
                 "MLB": it['MLB'], "SKU": it.get('SKU', ''), "Produto": it['Produto'],
                 "Preco Venda": pf, "Lucro": luc, "Margem Venda %": mrg, "Margem ERP %": mrg_erp_csv
             })
-        
         df_export = pd.DataFrame(csv_data)
         csv_file = df_export.to_csv(index=False).encode('utf-8')
         col_d.download_button("📥 Baixar Relatório", csv_file, "precificacao.csv", "text/csv")
         
-        def limpar_tudo_action(): st.session_state.lista_produtos = []
+        def limpar_tudo_action(): 
+            st.session_state.lista_produtos = []
+            persistir_e_recarregar()
+            
         col_c.button("🗑️ LIMPAR TUDO", on_click=limpar_tudo_action, type="secondary")
-        
     else:
         if not selecao_busca: st.info("Lista vazia.")
 
-# --- ABA 2: DASHBOARDS (COM BLINDAGEM DE ERRO) ---
+# --- ABA 2: DASHBOARDS ---
 with tab_bi:
     if not has_plotly:
         st.error("⚠️ Adicione 'plotly' no requirements.txt")
     elif len(st.session_state.lista_produtos) > 0:
-        
         visao_margem = st.radio("Analisar Margem sobre:", ["Preço de Venda (ML)", "Preço Base (ERP)"], horizontal=True)
-        
         rows = []
         for item in st.session_state.lista_produtos:
             pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
             _, fr, _ = identificar_faixa_frete(pf)
             if _ == "manual": fr = item['FreteManual']
             luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
-            
             mrg_venda = (luc/pf*100) if pf else 0
-            
-            # Safe ERP Access
             erp_val = float(item.get('PrecoERP', 0.0))
             mrg_erp = (luc/erp_val*100) if erp_val > 0 else 0
-            
             mrg_analise = mrg_venda if visao_margem == "Preço de Venda (ML)" else mrg_erp
             status = 'Saudável'
             if mrg_analise < 8: status = 'Crítico'
             elif mrg_analise < 15: status = 'Atenção'
-            
             rows.append({
                 'Produto': item['Produto'], 'Margem': mrg_analise, 'Lucro': luc, 
-                'Status': status, 'Venda': pf, 
-                'Custo': item['CMV'], 'Imposto': pf*(imposto_padrao/100), 
-                'Comissão': pf*(item['TaxaML']/100), 'Frete': fr
+                'Status': status, 'Venda': pf, 'Custo': item['CMV'], 
+                'Imposto': pf*(imposto_padrao/100), 'Comissão': pf*(item['TaxaML']/100), 'Frete': fr
             })
         
         df_dash = pd.DataFrame(rows)
