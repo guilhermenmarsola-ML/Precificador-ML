@@ -4,7 +4,7 @@ import time
 import re
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - V58 Dual Margin", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - V59 BI Pro", layout="centered", page_icon="💎")
 
 # Tenta importar Plotly
 try:
@@ -37,12 +37,13 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
     .stApp { background-color: #FAFAFA; font-family: 'Inter', sans-serif; }
     
+    /* Cards */
     .input-card { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #EFEFEF; margin-bottom: 20px; }
     .feed-card { background: white; border-radius: 16px; border: 1px solid #DBDBDB; box-shadow: 0 2px 5px rgba(0,0,0,0.02); margin-bottom: 15px; overflow: hidden; }
     .card-header { padding: 15px 20px; border-bottom: 1px solid #F0F0F0; display: flex; justify-content: space-between; align-items: center; }
     .card-body { padding: 20px; text-align: center; }
     
-    /* Rodapé do Card com Dupla Margem */
+    /* Rodapé do Card */
     .card-footer { 
         background-color: #F8F9FA; 
         padding: 10px 20px; 
@@ -55,16 +56,28 @@ st.markdown("""
     .margin-box { text-align: center; flex: 1; }
     .margin-val { font-weight: 700; font-size: 12px; color: #333; }
 
+    /* Tipografia */
     .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
     .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
     .price-hero { font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0; }
     
+    /* Pills */
     .pill { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; display: inline-block; }
     .pill-green { background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5; }
     .pill-yellow { background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D; }
     .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
-    
-    .audit-box { background-color: #F8F9FA; border: 1px solid #E9ECEF; border-radius: 8px; padding: 15px; font-family: 'Courier New', monospace; font-size: 12px; color: #333; margin-top: 10px; }
+
+    /* Audit Box */
+    .audit-box {
+        background-color: #F8F9FA;
+        border: 1px solid #E9ECEF;
+        border-radius: 8px;
+        padding: 15px;
+        font-family: 'Courier New', monospace;
+        font-size: 12px;
+        color: #333;
+        margin-top: 10px;
+    }
     .audit-line { display: flex; justify-content: space-between; margin-bottom: 4px; }
     .audit-bold { font-weight: bold; color: #000; }
 
@@ -103,7 +116,7 @@ with st.sidebar:
         taxa_minima = st.number_input("Min", value=3.25)
     st.divider()
     
-    # --- IMPORTAÇÃO ---
+    # IMPORTAÇÃO
     st.markdown("### 📂 Importar")
     uploaded_file = st.file_uploader("Excel/CSV", type=['xlsx', 'csv'])
     
@@ -150,6 +163,7 @@ with st.sidebar:
                         desc = limpar_valor_dinheiro(row[c_desc])
                         bonus = limpar_valor_dinheiro(row[c_bonus])
                         
+                        # Correção Decimal Excel
                         if 0 < desc < 1.0: desc = desc * 100
                         
                         sku_val = str(row[c_sku]) if c_sku in row else ""
@@ -157,18 +171,10 @@ with st.sidebar:
 
                         st.session_state.lista_produtos.append({
                             "id": int(time.time()*1000)+_, 
-                            "MLB": str(row[c_mlb]), 
-                            "SKU": sku_val, 
-                            "Produto": p,
-                            "CMV": cmv, 
-                            "FreteManual": 18.86, 
-                            "TaxaML": 16.5, 
-                            "Extra": 0.0,
-                            "PrecoERP": erp, 
-                            "MargemERP": 20.0, 
-                            "PrecoBase": pb, 
-                            "DescontoPct": desc, 
-                            "Bonus": bonus       
+                            "MLB": str(row[c_mlb]), "SKU": sku_val, "Produto": p,
+                            "CMV": cmv, "FreteManual": 18.86, "TaxaML": 16.5, 
+                            "Extra": 0.0, "PrecoERP": erp, "MargemERP": 20.0, 
+                            "PrecoBase": pb, "DescontoPct": desc, "Bonus": bonus       
                         })
                         cnt += 1
                     except: continue
@@ -189,14 +195,10 @@ def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, i
     custos_fixos_1 = custo_base + frete_manual
     divisor = 1 - ((taxa_ml_pct + imposto_pct) / 100)
     if divisor <= 0: return 0.0, "Erro"
-    
     preco_est_1 = (custos_fixos_1 + lucro_alvo_reais) / divisor
     if preco_est_1 >= 79.00: return preco_est_1, "Frete Manual"
-    
     for taxa, nome, p_min, p_max in [
-        (taxa_50_79, "Tab. 50-79", 50, 79),
-        (taxa_29_50, "Tab. 29-50", 29, 50),
-        (taxa_12_29, "Tab. 12-29", 12.5, 29)
+        (taxa_50_79, "Tab. 50-79", 50, 79), (taxa_29_50, "Tab. 29-50", 29, 50), (taxa_12_29, "Tab. 12-29", 12.5, 29)
     ]:
         custos = custo_base + taxa
         preco = (custos + lucro_alvo_reais) / divisor
@@ -226,7 +228,7 @@ def adicionar_produto_action():
     st.session_state.n_extra = 0.00
 
 # ==============================================================================
-# 7. INTERFACE PRINCIPAL
+# 7. LAYOUT PRINCIPAL
 # ==============================================================================
 
 st.markdown('<div style="text-align:center; padding-bottom:10px;">', unsafe_allow_html=True)
@@ -250,11 +252,9 @@ with tab_op:
     ordem_sort = c_sort.selectbox("", ["Recentes", "A-Z", "Z-A", "Maior Margem", "Menor Margem", "Maior Preço"], label_visibility="collapsed")
 
     lista_final = []
-    # Lógica de Filtro e Ordenação
     if selecao_busca:
         lista_final = [mapa_busca[selecao_busca]]
     else:
-        # Copia e Calcula para Ordenação
         temp_list = []
         for item in st.session_state.lista_produtos:
             pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
@@ -262,26 +262,19 @@ with tab_op:
             if _ == "manual": fr = item['FreteManual']
             luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
             mrg = (luc/pf*100) if pf else 0
-            
-            # Nova métrica: Margem ERP
             mrg_erp = (luc/item['PrecoERP']*100) if item['PrecoERP'] > 0 else 0
-            
-            # Item de Visualização
             view_item = item.copy()
             view_item.update({'_pf': pf, '_luc': luc, '_mrg': mrg, '_mrg_erp': mrg_erp})
             temp_list.append(view_item)
             
-        # Aplica Ordenação na lista temporária
         if ordem_sort == "A-Z": temp_list.sort(key=lambda x: str(x['Produto']).lower())
         elif ordem_sort == "Z-A": temp_list.sort(key=lambda x: str(x['Produto']).lower(), reverse=True)
         elif ordem_sort == "Maior Margem": temp_list.sort(key=lambda x: x['_mrg'], reverse=True)
         elif ordem_sort == "Menor Margem": temp_list.sort(key=lambda x: x['_mrg'])
         elif ordem_sort == "Maior Preço": temp_list.sort(key=lambda x: x['_pf'], reverse=True)
         else: temp_list.reverse()
-        
         lista_final = temp_list
 
-    # CADASTRO
     if not selecao_busca:
         st.markdown('<div class="input-card">', unsafe_allow_html=True)
         st.caption("CADASTRAR NOVO")
@@ -301,12 +294,9 @@ with tab_op:
         st.button("Cadastrar Item", type="primary", use_container_width=True, on_click=adicionar_produto_action)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # LISTA
     if lista_final:
         st.caption(f"Visualizando {len(lista_final)} produtos")
         for item in lista_final:
-            
-            # Recálculo para exibição (garante consistência)
             pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
             nome_frete_real, valor_frete_real, motivo_frete = identificar_faixa_frete(pf)
             if nome_frete_real == "manual": valor_frete_real = item['FreteManual']
@@ -319,7 +309,6 @@ with tab_op:
             margem_venda = (lucro_final / pf * 100) if pf > 0 else 0
             margem_erp = (lucro_final / item['PrecoERP'] * 100) if item['PrecoERP'] > 0 else 0
             
-            # Cores
             if margem_venda < 8.0: pill_cls = "pill-red"
             elif 8.0 <= margem_venda < 15.0: pill_cls = "pill-yellow"
             else: pill_cls = "pill-green"
@@ -328,7 +317,6 @@ with tab_op:
             txt_luc = f"+ R$ {lucro_final:.2f}" if lucro_final > 0 else f"- R$ {abs(lucro_final):.2f}"
             sku_show = item.get('SKU', '')
             
-            # CARD COM NOVO RODAPÉ
             st.markdown(f"""
             <div class="feed-card">
                 <div class="card-header">
@@ -354,7 +342,6 @@ with tab_op:
             """, unsafe_allow_html=True)
             
             with st.expander("⚙️ Editar e Detalhes"):
-                # Encontra ID real
                 real_idx = next((i for i, x in enumerate(st.session_state.lista_produtos) if x['id'] == item['id']), -1)
                 if real_idx != -1:
                     def up_f(k, f, i=real_idx): st.session_state.lista_produtos[i][f] = st.session_state[k]
@@ -364,102 +351,7 @@ with tab_op:
                     c3.number_input("Bônus", value=float(item['Bonus']), key=f"b{item['id']}", on_change=up_f, args=(f"b{item['id']}", 'Bonus'))
                     
                     st.divider()
-                    
-                    # AUDIT BOX
-                    st.markdown("##### 🧮 Memória de Cálculo")
+                    st.markdown("##### 🧮 Memória de Cálculo (Audit)")
                     st.markdown(f"""
                     <div class="audit-box">
-                        <div class="audit-line"><span>(+) Preço Tabela</span> <span>R$ {item['PrecoBase']:.2f}</span></div>
-                        <div class="audit-line" style="color:red;"><span>(-) Desconto ({item['DescontoPct']}%)</span> <span>R$ {item['PrecoBase'] - pf:.2f}</span></div>
-                        <div class="audit-line audit-bold"><span>(=) VENDA FINAL</span> <span>R$ {pf:.2f}</span></div>
-                        <br>
-                        <div class="audit-line"><span>(-) Impostos ({imposto_padrao}%)</span> <span>R$ {imposto_val:.2f}</span></div>
-                        <div class="audit-line"><span>(-) Comissão ({item['TaxaML']}%)</span> <span>R$ {comissao_val:.2f}</span></div>
-                        <div class="audit-line"><span>(-) Frete ({nome_frete_real})</span> <span>R$ {valor_frete_real:.2f}</span></div>
-                        <div class="audit-line"><span>(-) Custo CMV</span> <span>R$ {item['CMV']:.2f}</span></div>
-                        <div class="audit-line"><span>(-) Extras</span> <span>R$ {item['Extra']:.2f}</span></div>
-                        <br>
-                        <div class="audit-line" style="color:green;"><span>(+) Bônus / Rebate</span> <span>R$ {item['Bonus']:.2f}</span></div>
-                        <hr style="border-top: 1px dashed #ccc;">
-                        <div class="audit-line audit-bold"><span>(=) LUCRO LÍQUIDO</span> <span>R$ {lucro_final:.2f}</span></div>
-                        <br>
-                        <div class="audit-line"><span>Margem s/ Venda:</span> <span>{margem_venda:.1f}%</span></div>
-                        <div class="audit-line"><span>Margem s/ ERP (R$ {item['PrecoERP']:.2f}):</span> <span>{margem_erp:.1f}%</span></div>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    
-                    st.write("")
-                    if st.button("🗑️ Excluir", key=f"del{item['id']}"):
-                        del st.session_state.lista_produtos[real_idx]
-                        reiniciar_app()
-        
-        # --- FOOTER ---
-        st.markdown("---")
-        col_d, col_c = st.columns([2, 1])
-        
-        csv_data = []
-        for it in st.session_state.lista_produtos:
-            # Recálculo para CSV
-            pf = it['PrecoBase'] * (1 - it['DescontoPct']/100)
-            _, fr, _ = identificar_faixa_frete(pf)
-            if _ == "manual": fr = it['FreteManual']
-            luc = pf - (it['CMV'] + it['Extra'] + fr + (pf*(imposto_padrao+it['TaxaML'])/100)) + it['Bonus']
-            mrg = (luc/pf*100) if pf else 0
-            mrg_erp = (luc/it['PrecoERP']*100) if it['PrecoERP'] > 0 else 0
-            
-            csv_data.append({
-                "MLB": it['MLB'], "SKU": it.get('SKU', ''), "Produto": it['Produto'],
-                "Preco Venda": pf, "Lucro": luc, "Margem Venda %": mrg, "Margem ERP %": mrg_erp
-            })
-        
-        df_export = pd.DataFrame(csv_data)
-        csv_file = df_export.to_csv(index=False).encode('utf-8')
-        col_d.download_button("📥 Baixar Relatório", csv_file, "precificacao.csv", "text/csv")
-        
-        def limpar_tudo_action(): st.session_state.lista_produtos = []
-        col_c.button("🗑️ LIMPAR TUDO", on_click=limpar_tudo_action, type="secondary")
-        
-    else:
-        if not selecao_busca: st.info("Lista vazia.")
-
-# --- ABA 2: DASHBOARDS ---
-with tab_bi:
-    if not has_plotly:
-        st.error("⚠️ Adicione 'plotly' no requirements.txt")
-    elif len(st.session_state.lista_produtos) > 0:
-        rows = []
-        for item in st.session_state.lista_produtos:
-            pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
-            _, fr, _ = identificar_faixa_frete(pf)
-            if _ == "manual": fr = item['FreteManual']
-            luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
-            mrg = (luc/pf*100) if pf else 0
-            mrg_erp = (luc/item['PrecoERP']*100) if item['PrecoERP'] > 0 else 0
-            
-            status = 'Saudável'
-            if mrg < 8: status = 'Crítico'
-            elif mrg < 15: status = 'Atenção'
-            
-            rows.append({'Produto': item['Produto'], 'Margem': mrg, 'Margem ERP': mrg_erp, 'Lucro': luc, 'Status': status, 'Venda': pf, 
-                         'Custo': item['CMV'], 'Imposto': pf*(imposto_padrao/100), 'Comissão': pf*(item['TaxaML']/100), 'Frete': fr})
-        
-        df_dash = pd.DataFrame(rows)
-        k1, k2, k3 = st.columns(3)
-        k1.metric("Produtos", len(df_dash))
-        k2.metric("Média Margem Venda", f"{df_dash['Margem'].mean():.1f}%")
-        k3.metric("Média Margem ERP", f"{df_dash['Margem ERP'].mean():.1f}%")
-        st.divider()
-        
-        counts = df_dash['Status'].value_counts().reset_index()
-        counts.columns = ['Status', 'Qtd']
-        fig = px.bar(counts, x='Status', y='Qtd', color='Status', 
-                     color_discrete_map={'Crítico': '#EF4444', 'Atenção': '#F59E0B', 'Saudável': '#10B981'})
-        st.plotly_chart(fig, use_container_width=True)
-        
-        # Decomposição (Stacked)
-        st.subheader("Anatomia do Preço (Top 10)")
-        df_top = df_dash.sort_values(by='Venda', ascending=False).head(10)
-        fig3 = px.bar(df_top, y='Produto', x=['Custo', 'Frete', 'Comissão', 'Imposto', 'Lucro'], orientation='h')
-        st.plotly_chart(fig3, use_container_width=True)
-    else:
-        st.info("Adicione produtos para ver os gráficos.")
+                        <div class="audit-line"><span>(+) Preço Tabela</span> <span>R$ {item['PrecoBase']:.
