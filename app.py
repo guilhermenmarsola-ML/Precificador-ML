@@ -4,7 +4,7 @@ import time
 import re
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - V54 Complete", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - V55 Analytics", layout="centered", page_icon="💎")
 
 # Tenta importar Plotly
 try:
@@ -31,7 +31,7 @@ init_state('n_taxa', 16.5)
 init_state('n_erp', 85.44)
 init_state('n_merp', 20.0)
 
-# --- 3. CSS (DESIGN SYSTEM) ---
+# --- 3. DESIGN SYSTEM ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
@@ -142,6 +142,7 @@ with st.sidebar:
                         desc = limpar_valor_dinheiro(row[c_desc])
                         bonus = limpar_valor_dinheiro(row[c_bonus])
                         
+                        # Correção Decimal
                         if 0 < desc < 1.0: desc = desc * 100
                         
                         sku_val = str(row[c_sku]) if c_sku in row else ""
@@ -310,32 +311,25 @@ with tab_op:
             </div>
             """, unsafe_allow_html=True)
             
-            # --- ÁREA DE DETALHES/EDIÇÃO COM DRE RESTAURADA ---
-            with st.expander("⚙️ Editar e Detalhes Financeiros"):
+            with st.expander("⚙️ Editar e Detalhes"):
                 real_idx = next((i for i, x in enumerate(st.session_state.lista_produtos) if x['id'] == item['id']), -1)
                 if real_idx != -1:
                     def up_f(k, f, i=real_idx): st.session_state.lista_produtos[i][f] = st.session_state[k]
-                    
-                    st.caption("AJUSTES")
-                    ec1, ec2, ec3 = st.columns(3)
-                    ec1.number_input("Preço Tabela", value=float(item['PrecoBase']), key=f"p{item['id']}", on_change=up_f, args=(f"p{item['id']}", 'PrecoBase'))
-                    ec2.number_input("Desc %", value=float(item['DescontoPct']), key=f"d{item['id']}", on_change=up_f, args=(f"d{item['id']}", 'DescontoPct'))
-                    ec3.number_input("Bônus", value=float(item['Bonus']), key=f"b{item['id']}", on_change=up_f, args=(f"b{item['id']}", 'Bonus'))
+                    c1, c2, c3 = st.columns(3)
+                    c1.number_input("Preço", value=float(item['PrecoBase']), key=f"p{item['id']}", on_change=up_f, args=(f"p{item['id']}", 'PrecoBase'))
+                    c2.number_input("Desc %", value=float(item['DescontoPct']), key=f"d{item['id']}", on_change=up_f, args=(f"d{item['id']}", 'DescontoPct'))
+                    c3.number_input("Bônus", value=float(item['Bonus']), key=f"b{item['id']}", on_change=up_f, args=(f"b{item['id']}", 'Bonus'))
                     
                     st.divider()
                     
-                    # --- DRE VISUAL COMPLETA (RESTAURADA) ---
-                    st.caption("EXTRATO FINANCEIRO (DRE)")
-                    
+                    # DRE COMPLETA
                     d1, d2 = st.columns([3, 1])
                     d1.write("(+) Preço Tabela")
                     d2.write(f"R$ {item['PrecoBase']:.2f}")
-                    
                     if item['DescontoPct'] > 0:
                         d1, d2 = st.columns([3, 1])
                         d1.markdown(f":red[(-) Desconto ({item['DescontoPct']}%) ]")
                         d2.markdown(f":red[- R$ {item['PrecoBase'] - pf:.2f}]")
-                    
                     st.markdown("---")
                     d1, d2 = st.columns([3, 1])
                     d1.markdown("**(=) RECEITA BRUTA**")
@@ -345,11 +339,10 @@ with tab_op:
                     cust_list = [
                         (f"Impostos ({imposto_padrao}%)", imp),
                         (f"Comissão ML ({item['TaxaML']}%)", com),
-                        (f"Frete ({fr})", fr),
+                        (f"Frete ({_})", fr),
                         ("Custo CMV", item['CMV']),
                         ("Extras", item['Extra'])
                     ]
-                    
                     for lbl, val in cust_list:
                         d1, d2 = st.columns([3, 1])
                         d1.caption(f"(-) {lbl}")
@@ -360,10 +353,10 @@ with tab_op:
                         d1, d2 = st.columns([3, 1])
                         d1.markdown(":green[(+) Rebate / Bônus]")
                         d2.markdown(f":green[+ R$ {item['Bonus']:.2f}]")
-                        
+                    
                     st.divider()
                     
-                    # Box Final de Resultado dentro da DRE
+                    # BOX FINAL DRE
                     box_style = "background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5;"
                     if mrg < 8: box_style = "background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2;"
                     elif mrg < 15: box_style = "background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D;"
@@ -374,7 +367,7 @@ with tab_op:
                         <span style="font-weight: 800; font-size: 18px;">R$ {luc:.2f}</span>
                     </div>
                     """, unsafe_allow_html=True)
-                    
+
                     st.write("")
                     if st.button("🗑️ Excluir", key=f"del{item['id']}"):
                         del st.session_state.lista_produtos[real_idx]
@@ -406,7 +399,7 @@ with tab_op:
     else:
         if not selecao_busca: st.info("Lista vazia.")
 
-# --- ABA 2: DASHBOARDS ---
+# --- ABA 2: DASHBOARDS (COM 3º GRAFICO DECOMPOSIÇÃO) ---
 with tab_bi:
     if not has_plotly:
         st.error("⚠️ Adicione 'plotly' no requirements.txt")
@@ -416,26 +409,48 @@ with tab_bi:
             pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
             _, fr = identificar_faixa_frete(pf)
             if _ == "manual": fr = item['FreteManual']
-            luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
+            imp = pf * (imposto_padrao/100)
+            com = pf * (item['TaxaML']/100)
+            custo_total = item['CMV'] + item['Extra'] + fr + imp + com
+            luc = pf - custo_total + item['Bonus']
             mrg = (luc/pf*100) if pf else 0
+            
             status = 'Saudável'
             if mrg < 8: status = 'Crítico'
             elif mrg < 15: status = 'Atenção'
-            rows.append({'Produto': item['Produto'], 'Margem': mrg, 'Lucro': luc, 'Status': status, 'Venda': pf})
+            
+            # Adiciona colunas de decomposição
+            rows.append({
+                'Produto': item['Produto'], 'Margem': mrg, 'Lucro': luc, 'Status': status, 'Venda': pf,
+                'Custo CMV': item['CMV'] + item['Extra'], 'Frete': fr, 'Comissão': com, 'Imposto': imp
+            })
         
         df_dash = pd.DataFrame(rows)
+        
         k1, k2, k3 = st.columns(3)
         k1.metric("Produtos", len(df_dash))
         k2.metric("Média Margem", f"{df_dash['Margem'].mean():.1f}%")
         k3.metric("Lucro Total", f"R$ {df_dash['Lucro'].sum():.2f}")
+        
         st.divider()
         
+        # G1: Semáforo
         counts = df_dash['Status'].value_counts().reset_index()
         counts.columns = ['Status', 'Qtd']
         fig = px.bar(counts, x='Status', y='Qtd', color='Status', 
                      color_discrete_map={'Crítico': '#EF4444', 'Atenção': '#F59E0B', 'Saudável': '#10B981'})
         st.plotly_chart(fig, use_container_width=True)
         
+        # G2: Decomposição de Preço (NOVO)
+        st.subheader("Anatomia do Preço (Top 10 Itens)")
+        df_top10 = df_dash.sort_values(by='Venda', ascending=False).head(10)
+        fig3 = px.bar(df_top10, y='Produto', x=['Custo CMV', 'Frete', 'Comissão', 'Imposto', 'Lucro'], 
+                      orientation='h', title="Decomposição de Custos", height=400)
+        st.plotly_chart(fig3, use_container_width=True)
+
+        # G3: Dispersão
+        st.divider()
+        st.subheader("Eficiência: Preço x Margem")
         fig2 = px.scatter(df_dash, x='Venda', y='Margem', color='Status', hover_name='Produto',
                           color_discrete_map={'Crítico': '#EF4444', 'Atenção': '#F59E0B', 'Saudável': '#10B981'})
         st.plotly_chart(fig2, use_container_width=True)
