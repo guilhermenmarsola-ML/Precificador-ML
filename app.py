@@ -4,7 +4,7 @@ import time
 import re
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - V57 Blindada", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - V58 Dual Margin", layout="centered", page_icon="💎")
 
 # Tenta importar Plotly
 try:
@@ -37,14 +37,23 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
     .stApp { background-color: #FAFAFA; font-family: 'Inter', sans-serif; }
     
-    .stTabs [data-baseweb="tab-list"] { gap: 10px; }
-    .stTabs [data-baseweb="tab"] { background-color: white; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
-    .stTabs [aria-selected="true"] { background-color: #2563EB !important; color: white !important; }
-
     .input-card { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #EFEFEF; margin-bottom: 20px; }
     .feed-card { background: white; border-radius: 16px; border: 1px solid #DBDBDB; box-shadow: 0 2px 5px rgba(0,0,0,0.02); margin-bottom: 15px; overflow: hidden; }
     .card-header { padding: 15px 20px; border-bottom: 1px solid #F0F0F0; display: flex; justify-content: space-between; align-items: center; }
     .card-body { padding: 20px; text-align: center; }
+    
+    /* Rodapé do Card com Dupla Margem */
+    .card-footer { 
+        background-color: #F8F9FA; 
+        padding: 10px 20px; 
+        border-top: 1px solid #F0F0F0; 
+        display: flex; 
+        justify-content: space-between; 
+        font-size: 11px; 
+        color: #666;
+    }
+    .margin-box { text-align: center; flex: 1; }
+    .margin-val { font-weight: 700; font-size: 12px; color: #333; }
 
     .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
     .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
@@ -54,7 +63,7 @@ st.markdown("""
     .pill-green { background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5; }
     .pill-yellow { background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D; }
     .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
-
+    
     .audit-box { background-color: #F8F9FA; border: 1px solid #E9ECEF; border-radius: 8px; padding: 15px; font-family: 'Courier New', monospace; font-size: 12px; color: #333; margin-top: 10px; }
     .audit-line { display: flex; justify-content: space-between; margin-bottom: 4px; }
     .audit-bold { font-weight: bold; color: #000; }
@@ -228,15 +237,11 @@ tab_op, tab_bi = st.tabs(["⚡ Operacional", "📊 Dashboards"])
 
 # --- ABA 1: OPERACIONAL ---
 with tab_op:
-    
-    # --- BUSCA BLINDADA ---
     mapa_busca = {}
     opcoes_busca = []
-    
     if st.session_state.lista_produtos:
         for p in st.session_state.lista_produtos:
-            # Cria label único para evitar colisão no selectbox
-            label = f"{p['Produto']} | {p['MLB']} | #{p['id']}" 
+            label = f"{p['Produto']} (MLB: {p['MLB']})"
             opcoes_busca.append(label)
             mapa_busca[label] = p
 
@@ -245,35 +250,38 @@ with tab_op:
     ordem_sort = c_sort.selectbox("", ["Recentes", "A-Z", "Z-A", "Maior Margem", "Menor Margem", "Maior Preço"], label_visibility="collapsed")
 
     lista_final = []
-    
-    # TRY-EXCEPT para evitar crash no filtro/sort
-    try:
-        if selecao_busca and selecao_busca in mapa_busca:
-            lista_final = [mapa_busca[selecao_busca]]
-        else:
-            # Cópia segura para ordenação
-            lista_final = [p.copy() for p in st.session_state.lista_produtos]
+    # Lógica de Filtro e Ordenação
+    if selecao_busca:
+        lista_final = [mapa_busca[selecao_busca]]
+    else:
+        # Copia e Calcula para Ordenação
+        temp_list = []
+        for item in st.session_state.lista_produtos:
+            pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
+            _, fr, _ = identificar_faixa_frete(pf)
+            if _ == "manual": fr = item['FreteManual']
+            luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
+            mrg = (luc/pf*100) if pf else 0
             
-            # Pré-cálculo seguro
-            for item in lista_final:
-                pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
-                _, fr, _ = identificar_faixa_frete(pf)
-                if _ == "manual": fr = item['FreteManual']
-                luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
-                item['_mrg'] = (luc/pf*100) if pf > 0 else 0
-                item['_prc'] = pf
+            # Nova métrica: Margem ERP
+            mrg_erp = (luc/item['PrecoERP']*100) if item['PrecoERP'] > 0 else 0
             
-            if ordem_sort == "A-Z": lista_final.sort(key=lambda x: str(x['Produto']).lower())
-            elif ordem_sort == "Z-A": lista_final.sort(key=lambda x: str(x['Produto']).lower(), reverse=True)
-            elif ordem_sort == "Maior Margem": lista_final.sort(key=lambda x: x['_mrg'], reverse=True)
-            elif ordem_sort == "Menor Margem": lista_final.sort(key=lambda x: x['_mrg'])
-            elif ordem_sort == "Maior Preço": lista_final.sort(key=lambda x: x['_prc'], reverse=True)
-            else: lista_final.reverse()
-    except Exception as e:
-        st.error(f"Erro ao ordenar: {e}")
-        lista_final = st.session_state.lista_produtos # Fallback
+            # Item de Visualização
+            view_item = item.copy()
+            view_item.update({'_pf': pf, '_luc': luc, '_mrg': mrg, '_mrg_erp': mrg_erp})
+            temp_list.append(view_item)
+            
+        # Aplica Ordenação na lista temporária
+        if ordem_sort == "A-Z": temp_list.sort(key=lambda x: str(x['Produto']).lower())
+        elif ordem_sort == "Z-A": temp_list.sort(key=lambda x: str(x['Produto']).lower(), reverse=True)
+        elif ordem_sort == "Maior Margem": temp_list.sort(key=lambda x: x['_mrg'], reverse=True)
+        elif ordem_sort == "Menor Margem": temp_list.sort(key=lambda x: x['_mrg'])
+        elif ordem_sort == "Maior Preço": temp_list.sort(key=lambda x: x['_pf'], reverse=True)
+        else: temp_list.reverse()
+        
+        lista_final = temp_list
 
-    # --- CADASTRO ---
+    # CADASTRO
     if not selecao_busca:
         st.markdown('<div class="input-card">', unsafe_allow_html=True)
         st.caption("CADASTRAR NOVO")
@@ -293,33 +301,34 @@ with tab_op:
         st.button("Cadastrar Item", type="primary", use_container_width=True, on_click=adicionar_produto_action)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # --- LISTA ---
+    # LISTA
     if lista_final:
         st.caption(f"Visualizando {len(lista_final)} produtos")
         for item in lista_final:
             
-            # Recálculo para exibição
-            preco_base_calc = item['PrecoBase']
-            desc_calc = item['DescontoPct']
-            preco_final_calc = preco_base_calc * (1 - (desc_calc / 100))
-            
-            nome_frete_real, valor_frete_real, motivo_frete = identificar_faixa_frete(preco_final_calc)
+            # Recálculo para exibição (garante consistência)
+            pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
+            nome_frete_real, valor_frete_real, motivo_frete = identificar_faixa_frete(pf)
             if nome_frete_real == "manual": valor_frete_real = item['FreteManual']
             
-            imposto_val = preco_final_calc * (imposto_padrao / 100)
-            comissao_val = preco_final_calc * (item['TaxaML'] / 100)
+            imposto_val = pf * (imposto_padrao / 100)
+            comissao_val = pf * (item['TaxaML'] / 100)
             custos_totais = item['CMV'] + item['Extra'] + valor_frete_real + imposto_val + comissao_val
-            lucro_final = preco_final_calc - custos_totais + item['Bonus']
-            margem_final = (lucro_final / preco_final_calc * 100) if preco_final_calc > 0 else 0
+            lucro_final = pf - custos_totais + item['Bonus']
             
-            if margem_final < 8.0: pill_cls = "pill-red"
-            elif margem_final < 15.0: pill_cls = "pill-yellow"
+            margem_venda = (lucro_final / pf * 100) if pf > 0 else 0
+            margem_erp = (lucro_final / item['PrecoERP'] * 100) if item['PrecoERP'] > 0 else 0
+            
+            # Cores
+            if margem_venda < 8.0: pill_cls = "pill-red"
+            elif 8.0 <= margem_venda < 15.0: pill_cls = "pill-yellow"
             else: pill_cls = "pill-green"
 
-            txt_pill = f"{margem_final:.1f}%"
+            txt_pill = f"{margem_venda:.1f}%"
             txt_luc = f"+ R$ {lucro_final:.2f}" if lucro_final > 0 else f"- R$ {abs(lucro_final):.2f}"
             sku_show = item.get('SKU', '')
             
+            # CARD COM NOVO RODAPÉ
             st.markdown(f"""
             <div class="feed-card">
                 <div class="card-header">
@@ -328,16 +337,25 @@ with tab_op:
                 </div>
                 <div class="card-body">
                     <div style="font-size: 11px; color:#888; font-weight:600;">PREÇO DE VENDA</div>
-                    <div class="price-hero">R$ {preco_final_calc:.2f}</div>
-                    <div style="font-size: 13px; color:#555;">Lucro Líquido: <b>{txt_luc}</b></div>
+                    <div class="price-hero">R$ {pf:.2f}</div>
+                    <div style="font-size: 13px; color:#555; margin-bottom:5px;">Lucro Líquido: <b>{txt_luc}</b></div>
+                </div>
+                <div class="card-footer">
+                    <div class="margin-box">
+                        <div>Margem Venda</div>
+                        <div class="margin-val">{margem_venda:.1f}%</div>
+                    </div>
+                    <div class="margin-box" style="border-left: 1px solid #eee;">
+                        <div>Margem ERP</div>
+                        <div class="margin-val">{margem_erp:.1f}%</div>
+                    </div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
             with st.expander("⚙️ Editar e Detalhes"):
-                # Busca Indice Real (Vital para edição correta)
+                # Encontra ID real
                 real_idx = next((i for i, x in enumerate(st.session_state.lista_produtos) if x['id'] == item['id']), -1)
-                
                 if real_idx != -1:
                     def up_f(k, f, i=real_idx): st.session_state.lista_produtos[i][f] = st.session_state[k]
                     c1, c2, c3 = st.columns(3)
@@ -347,24 +365,26 @@ with tab_op:
                     
                     st.divider()
                     
-                    # --- MEMÓRIA DE CÁLCULO RESTAURADA ---
-                    st.markdown("##### 🧮 Memória de Cálculo (Audit)")
+                    # AUDIT BOX
+                    st.markdown("##### 🧮 Memória de Cálculo")
                     st.markdown(f"""
                     <div class="audit-box">
-                        <div class="audit-line"><span>(+) Preço Tabela</span> <span>R$ {preco_base_calc:.2f}</span></div>
-                        <div class="audit-line" style="color:red;"><span>(-) Desconto ({desc_calc}%)</span> <span>R$ {preco_base_calc - preco_final_calc:.2f}</span></div>
-                        <div class="audit-line audit-bold"><span>(=) VENDA FINAL</span> <span>R$ {preco_final_calc:.2f}</span></div>
+                        <div class="audit-line"><span>(+) Preço Tabela</span> <span>R$ {item['PrecoBase']:.2f}</span></div>
+                        <div class="audit-line" style="color:red;"><span>(-) Desconto ({item['DescontoPct']}%)</span> <span>R$ {item['PrecoBase'] - pf:.2f}</span></div>
+                        <div class="audit-line audit-bold"><span>(=) VENDA FINAL</span> <span>R$ {pf:.2f}</span></div>
                         <br>
                         <div class="audit-line"><span>(-) Impostos ({imposto_padrao}%)</span> <span>R$ {imposto_val:.2f}</span></div>
                         <div class="audit-line"><span>(-) Comissão ({item['TaxaML']}%)</span> <span>R$ {comissao_val:.2f}</span></div>
                         <div class="audit-line"><span>(-) Frete ({nome_frete_real})</span> <span>R$ {valor_frete_real:.2f}</span></div>
-                        <div class="audit-line" style="font-size:10px; color:#888;">&nbsp;&nbsp;&nbsp;↳ {motivo_frete}</div>
                         <div class="audit-line"><span>(-) Custo CMV</span> <span>R$ {item['CMV']:.2f}</span></div>
                         <div class="audit-line"><span>(-) Extras</span> <span>R$ {item['Extra']:.2f}</span></div>
                         <br>
                         <div class="audit-line" style="color:green;"><span>(+) Bônus / Rebate</span> <span>R$ {item['Bonus']:.2f}</span></div>
                         <hr style="border-top: 1px dashed #ccc;">
                         <div class="audit-line audit-bold"><span>(=) LUCRO LÍQUIDO</span> <span>R$ {lucro_final:.2f}</span></div>
+                        <br>
+                        <div class="audit-line"><span>Margem s/ Venda:</span> <span>{margem_venda:.1f}%</span></div>
+                        <div class="audit-line"><span>Margem s/ ERP (R$ {item['PrecoERP']:.2f}):</span> <span>{margem_erp:.1f}%</span></div>
                     </div>
                     """, unsafe_allow_html=True)
                     
@@ -379,14 +399,17 @@ with tab_op:
         
         csv_data = []
         for it in st.session_state.lista_produtos:
+            # Recálculo para CSV
             pf = it['PrecoBase'] * (1 - it['DescontoPct']/100)
             _, fr, _ = identificar_faixa_frete(pf)
             if _ == "manual": fr = it['FreteManual']
             luc = pf - (it['CMV'] + it['Extra'] + fr + (pf*(imposto_padrao+it['TaxaML'])/100)) + it['Bonus']
             mrg = (luc/pf*100) if pf else 0
+            mrg_erp = (luc/it['PrecoERP']*100) if it['PrecoERP'] > 0 else 0
+            
             csv_data.append({
                 "MLB": it['MLB'], "SKU": it.get('SKU', ''), "Produto": it['Produto'],
-                "Preco Venda": pf, "Lucro": luc, "Margem %": mrg
+                "Preco Venda": pf, "Lucro": luc, "Margem Venda %": mrg, "Margem ERP %": mrg_erp
             })
         
         df_export = pd.DataFrame(csv_data)
@@ -411,19 +434,20 @@ with tab_bi:
             if _ == "manual": fr = item['FreteManual']
             luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
             mrg = (luc/pf*100) if pf else 0
+            mrg_erp = (luc/item['PrecoERP']*100) if item['PrecoERP'] > 0 else 0
             
             status = 'Saudável'
             if mrg < 8: status = 'Crítico'
             elif mrg < 15: status = 'Atenção'
             
-            rows.append({'Produto': item['Produto'], 'Margem': mrg, 'Lucro': luc, 'Status': status, 'Venda': pf, 
+            rows.append({'Produto': item['Produto'], 'Margem': mrg, 'Margem ERP': mrg_erp, 'Lucro': luc, 'Status': status, 'Venda': pf, 
                          'Custo': item['CMV'], 'Imposto': pf*(imposto_padrao/100), 'Comissão': pf*(item['TaxaML']/100), 'Frete': fr})
         
         df_dash = pd.DataFrame(rows)
         k1, k2, k3 = st.columns(3)
         k1.metric("Produtos", len(df_dash))
-        k2.metric("Média Margem", f"{df_dash['Margem'].mean():.1f}%")
-        k3.metric("Lucro Total", f"R$ {df_dash['Lucro'].sum():.2f}")
+        k2.metric("Média Margem Venda", f"{df_dash['Margem'].mean():.1f}%")
+        k3.metric("Média Margem ERP", f"{df_dash['Margem ERP'].mean():.1f}%")
         st.divider()
         
         counts = df_dash['Status'].value_counts().reset_index()
