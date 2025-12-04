@@ -4,9 +4,9 @@ import time
 import re
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador 2026 - Master V50", layout="centered", page_icon="💎")
+st.set_page_config(page_title="Precificador 2026 - V51 Fixed", layout="centered", page_icon="💎")
 
-# Tenta importar Plotly (Proteção contra erro)
+# Tenta importar Plotly
 try:
     import plotly.express as px
     has_plotly = True
@@ -118,10 +118,15 @@ with st.sidebar:
                 return 0
 
             c_prod = st.selectbox("Produto", cols, index=get_idx(cols, ["Produto", "Nome"]))
-            c_cmv = st.selectbox("CMV", cols, index=get_idx(cols, "CMV"))
-            c_prc = st.selectbox("Preço Venda", cols, index=get_idx(cols, ["Preço", "Venda"]))
-            c_erp = st.selectbox("Preço ERP", cols, index=get_idx(cols, ["ERP", "Base", "GRA"]))
             c_mlb = st.selectbox("MLB", cols, index=get_idx(cols, ["Anúncio", "MLB"]))
+            c_sku = st.selectbox("SKU", cols, index=get_idx(cols, ["SKU", "Ref"])) # Adicionado SKU
+            c_cmv = st.selectbox("CMV", cols, index=get_idx(cols, "CMV"))
+            c_erp = st.selectbox("Preço ERP", cols, index=get_idx(cols, ["ERP", "Base", "GRA"]))
+            c_prc = st.selectbox("Preço Venda", cols, index=get_idx(cols, ["Preço", "Venda"]))
+            
+            # Novos Mapeamentos (CORRIGIDO)
+            c_desc = st.selectbox("Desconto %", cols, index=get_idx(cols, ["Desconto", "%"]))
+            c_bonus = st.selectbox("Rebate/Bônus", cols, index=get_idx(cols, ["Bônus", "Rebate", "Bonus"]))
             
             if st.button("✅ Importar", type="primary"):
                 df = xl.parse(aba_selecionada, header=header_row)
@@ -131,16 +136,37 @@ with st.sidebar:
                     try:
                         p = str(row[c_prod])
                         if not p or p == 'nan': continue
+                        
+                        # Leitura de Valores
                         cmv = limpar_valor_dinheiro(row[c_cmv])
                         pb = limpar_valor_dinheiro(row[c_prc])
                         erp = limpar_valor_dinheiro(row[c_erp])
                         if erp == 0: erp = pb
                         
+                        # Leitura dos novos campos (CORRIGIDO)
+                        desc = limpar_valor_dinheiro(row[c_desc])
+                        bonus = limpar_valor_dinheiro(row[c_bonus])
+                        
+                        # Regra Decimal (0.03 -> 3.0)
+                        if 0 < desc < 1.0: desc = desc * 100
+                        
+                        sku_val = str(row[c_sku]) if c_sku in row else ""
+                        if sku_val == 'nan': sku_val = ""
+
                         st.session_state.lista_produtos.append({
-                            "id": int(time.time()*1000)+_, "MLB": str(row[c_mlb]), "SKU": "", 
-                            "Produto": p, "CMV": cmv, "FreteManual": 18.86, "TaxaML": 16.5, 
-                            "Extra": 0.0, "PrecoERP": erp, "MargemERP": 20.0, 
-                            "PrecoBase": pb, "DescontoPct": 0.0, "Bonus": 0.0
+                            "id": int(time.time()*1000)+_, 
+                            "MLB": str(row[c_mlb]), 
+                            "SKU": sku_val, 
+                            "Produto": p,
+                            "CMV": cmv, 
+                            "FreteManual": 18.86, 
+                            "TaxaML": 16.5, 
+                            "Extra": 0.0,
+                            "PrecoERP": erp, 
+                            "MargemERP": 20.0, 
+                            "PrecoBase": pb, 
+                            "DescontoPct": desc, # Passando o valor correto
+                            "Bonus": bonus       # Passando o valor correto
                         })
                         cnt += 1
                     except: continue
@@ -197,17 +223,14 @@ def adicionar_produto_action():
 # 7. LAYOUT PRINCIPAL (ABAS)
 # ==============================================================================
 
-# Cabeçalho
 st.markdown('<div style="text-align:center; padding-bottom:10px;">', unsafe_allow_html=True)
 st.title("Precificador 2026")
 st.markdown('</div>', unsafe_allow_html=True)
 
-# Abas
 tab_op, tab_bi = st.tabs(["⚡ Operacional", "📊 Dashboards"])
 
 # --- ABA 1: OPERACIONAL ---
 with tab_op:
-    # Busca Google Style
     mapa_busca = {}
     opcoes_busca = []
     if st.session_state.lista_produtos:
@@ -218,7 +241,7 @@ with tab_op:
 
     c_busca, c_sort = st.columns([3, 1])
     selecao_busca = c_busca.selectbox("Busca", options=opcoes_busca, index=None, placeholder="🔍 Buscar...", label_visibility="collapsed")
-    ordem_sort = c_sort.selectbox("", ["Recentes", "A-Z", "Z-A", "Maior Margem", "Menor Margem"], label_visibility="collapsed")
+    ordem_sort = c_sort.selectbox("", ["Recentes", "A-Z", "Z-A", "Maior Margem", "Menor Margem", "Maior Preço"], label_visibility="collapsed")
 
     lista_final = []
     if selecao_busca:
@@ -231,16 +254,18 @@ with tab_op:
             if _ == "manual": fr = item['FreteManual']
             luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
             item['_mrg'] = (luc/pf*100) if pf else 0
+            item['_prc'] = pf
         
         if ordem_sort == "A-Z": lista_final.sort(key=lambda x: x['Produto'].lower())
         elif ordem_sort == "Z-A": lista_final.sort(key=lambda x: x['Produto'].lower(), reverse=True)
         elif ordem_sort == "Maior Margem": lista_final.sort(key=lambda x: x['_mrg'], reverse=True)
         elif ordem_sort == "Menor Margem": lista_final.sort(key=lambda x: x['_mrg'])
+        elif ordem_sort == "Maior Preço": lista_final.sort(key=lambda x: x['_prc'], reverse=True)
         else: lista_final.reverse()
 
-    # Cadastro (se não busca)
     if not selecao_busca:
         st.markdown('<div class="input-card">', unsafe_allow_html=True)
+        st.caption("CADASTRAR NOVO")
         st.text_input("MLB", key="n_mlb", placeholder="Ex: MLB-12345")
         c1, c2 = st.columns([1, 2])
         c1.text_input("SKU", key="n_sku")
@@ -257,7 +282,6 @@ with tab_op:
         st.button("Cadastrar Item", type="primary", use_container_width=True, on_click=adicionar_produto_action)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # Lista
     if lista_final:
         st.caption(f"Visualizando {len(lista_final)} produtos")
         for item in lista_final:
@@ -277,10 +301,12 @@ with tab_op:
             txt_pill = f"{mrg:.1f}%"
             txt_luc = f"+ R$ {luc:.2f}" if luc > 0 else f"- R$ {abs(luc):.2f}"
             
+            sku_show = item.get('SKU', '')
+            
             st.markdown(f"""
             <div class="feed-card">
                 <div class="card-header">
-                    <div><div class="sku-text">{item['MLB']} {item.get('SKU','')}</div><div class="title-text">{item['Produto']}</div></div>
+                    <div><div class="sku-text">{item['MLB']} {sku_show}</div><div class="title-text">{item['Produto']}</div></div>
                     <div class="{pill_cls} pill">{txt_pill}</div>
                 </div>
                 <div class="card-body">
@@ -292,7 +318,6 @@ with tab_op:
             """, unsafe_allow_html=True)
             
             with st.expander("⚙️ Editar"):
-                # Busca Indice Real
                 real_idx = next((i for i, x in enumerate(st.session_state.lista_produtos) if x['id'] == item['id']), -1)
                 if real_idx != -1:
                     def up_f(k, f, i=real_idx): st.session_state.lista_produtos[i][f] = st.session_state[k]
@@ -309,12 +334,11 @@ with tab_op:
     else:
         if not selecao_busca: st.info("Lista vazia.")
 
-# --- ABA 2: DASHBOARDS (COM PROTEÇÃO) ---
+# --- ABA 2: DASHBOARDS ---
 with tab_bi:
     if not has_plotly:
-        st.error("⚠️ Biblioteca 'plotly' não instalada. Adicione 'plotly' no requirements.txt")
+        st.error("⚠️ Instale 'plotly' no requirements.txt")
     elif len(st.session_state.lista_produtos) > 0:
-        # Prepara Dados
         rows = []
         for item in st.session_state.lista_produtos:
             pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
@@ -327,30 +351,25 @@ with tab_bi:
             if mrg < 8: status = 'Crítico'
             elif mrg < 15: status = 'Atenção'
             
-            rows.append({'Produto': item['Produto'], 'Margem': mrg, 'Lucro': luc, 'Status': status, 'Venda': pf})
+            rows.append({'Produto': item['Produto'], 'Margem': mrg, 'Lucro': luc, 'Status': status, 'Venda': pf, 'Custo': item['CMV']})
         
         df_dash = pd.DataFrame(rows)
         
-        # KPI
         k1, k2, k3 = st.columns(3)
         k1.metric("Produtos", len(df_dash))
         k2.metric("Média Margem", f"{df_dash['Margem'].mean():.1f}%")
-        k3.metric("Lucro Total Est.", f"R$ {df_dash['Lucro'].sum():.2f}")
+        k3.metric("Lucro Total", f"R$ {df_dash['Lucro'].sum():.2f}")
         
         st.divider()
         
-        # Gráfico 1: Semáforo
         counts = df_dash['Status'].value_counts().reset_index()
         counts.columns = ['Status', 'Qtd']
         fig = px.bar(counts, x='Status', y='Qtd', color='Status', 
                      color_discrete_map={'Crítico': '#EF4444', 'Atenção': '#F59E0B', 'Saudável': '#10B981'})
         st.plotly_chart(fig, use_container_width=True)
         
-        # Gráfico 2: Dispersão
-        st.caption("Margem vs Preço de Venda")
         fig2 = px.scatter(df_dash, x='Venda', y='Margem', color='Status', hover_name='Produto',
                           color_discrete_map={'Crítico': '#EF4444', 'Atenção': '#F59E0B', 'Saudável': '#10B981'})
         st.plotly_chart(fig2, use_container_width=True)
-        
     else:
-        st.info("Adicione produtos na aba 'Operacional' para ver os gráficos.")
+        st.info("Adicione produtos para ver os gráficos.")
