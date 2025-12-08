@@ -8,14 +8,14 @@ import os
 from datetime import datetime
 
 # --- 1. CONFIGURAÇÃO ---
-st.set_page_config(page_title="Precificador PRO - V68 System", layout="wide", page_icon="💎")
+st.set_page_config(page_title="Precificador PRO - V69 Final", layout="wide", page_icon="💎")
 
-# MUDAMOS O NOME PARA FORÇAR A CRIAÇÃO DE UM NOVO BANCO CORRETO
-DB_NAME = 'precificador_system.db'
+# MUDANÇA CRÍTICA: Nome novo para forçar criação de banco limpo
+DB_NAME = 'precificador_v69.db'
 
 # --- 2. FUNÇÕES AUXILIARES ---
 def reiniciar_app():
-    time.sleep(0.1)
+    time.sleep(0.5)
     if hasattr(st, 'rerun'): st.rerun()
     else: st.experimental_rerun()
 
@@ -35,12 +35,16 @@ PLAN_LIMITS = {
 PLANS_ORDER = ["Silver", "Gold", "Platinum"]
 
 # --- 3. BANCO DE DADOS ---
+def get_db_connection():
+    return sqlite3.connect(DB_NAME, check_same_thread=False)
+
 def init_db(reset=False):
-    if reset and os.path.exists(DB_NAME):
-        try: os.remove(DB_NAME)
-        except: pass
+    if reset:
+        if os.path.exists(DB_NAME):
+            try: os.remove(DB_NAME)
+            except: pass
         
-    conn = sqlite3.connect(DB_NAME)
+    conn = get_db_connection()
     c = conn.cursor()
     
     # Usuários
@@ -56,7 +60,7 @@ def init_db(reset=False):
             owner_id INTEGER DEFAULT 0
         )
     ''')
-    # Times
+    # Times (Convites)
     c.execute('''
         CREATE TABLE IF NOT EXISTS teams (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -79,45 +83,56 @@ def init_db(reset=False):
     conn.commit()
     conn.close()
 
-# Garante que o DB existe ao iniciar
+# Garante inicialização
 if not os.path.exists(DB_NAME): init_db()
-
-def get_db(): return sqlite3.connect(DB_NAME)
 
 def make_hashes(password): return hashlib.sha256(str.encode(password)).hexdigest()
 def check_hashes(password, hashed_text): return make_hashes(password) == hashed_text
 
 # Funções CRUD
 def add_user(username, password, name, plan, owner_id=0):
-    conn = get_db()
+    conn = get_db_connection()
     c = conn.cursor()
     try:
         c.execute('INSERT INTO users(username, password, name, plan, is_active, owner_id) VALUES (?,?,?,?,?,?)', 
                   (username, make_hashes(password), name, plan, True, owner_id))
         conn.commit()
         return c.lastrowid
-    except: return -1
+    except Exception as e:
+        st.error(f"Erro ao criar usuário: {e}")
+        return -1
     finally: conn.close()
 
 def login_user(username, password):
-    conn = get_db()
+    conn = get_db_connection()
     c = conn.cursor()
     try:
-        # Tenta selecionar com as novas colunas
-        c.execute('SELECT id, password, name, plan, is_active, owner_id, photo_base64 FROM users WHERE username = ?', (username,))
+        # Busca usuário
+        c.execute('SELECT * FROM users WHERE username = ?', (username,))
         data = c.fetchone()
-        conn.close()
-        if data and data[4]: # is_active
-            if check_hashes(password, data[1]):
-                return {"id": data[0], "name": data[2], "plan": data[3], "owner_id": data[5], "photo": data[6], "username": username}
+        
+        if data:
+            # Índices: 0=id, 1=user, 2=pass, 3=name, 4=plan, 5=active, 6=photo, 7=owner
+            db_pass = data[2]
+            is_active = data[5]
+            
+            if is_active and check_hashes(password, db_pass):
+                return {
+                    "id": data[0], 
+                    "name": data[3], 
+                    "plan": data[4], 
+                    "owner_id": data[7], 
+                    "photo": data[6], 
+                    "username": username
+                }
     except Exception as e:
-        # Se der erro de coluna, força um reset silencioso ou avisa
-        print(f"Erro DB: {e}")
-        return None
+        st.error(f"Erro no Login: {e}")
+    finally:
+        conn.close()
     return None
 
 def carregar_produtos(owner_id):
-    conn = get_db()
+    conn = get_db_connection()
     try:
         df = pd.read_sql_query("SELECT * FROM products WHERE owner_id = ?", conn, params=(owner_id,))
         lista = []
@@ -133,7 +148,7 @@ def carregar_produtos(owner_id):
     finally: conn.close()
 
 def salvar_produto(owner_id, item):
-    conn = get_db()
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute('''INSERT INTO products (owner_id, mlb, sku, nome, cmv, frete, taxa_ml, extra, preco_erp, margem_erp, preco_base, desc_pct, bonus) 
                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''', 
@@ -143,7 +158,7 @@ def salvar_produto(owner_id, item):
     conn.close()
 
 def atualizar_produto(item_id, campo, valor):
-    conn = get_db()
+    conn = get_db_connection()
     c = conn.cursor()
     mapa = {'PrecoBase': 'preco_base', 'DescontoPct': 'desc_pct', 'Bonus': 'bonus', 'CMV': 'cmv'}
     if campo in mapa:
@@ -152,7 +167,7 @@ def atualizar_produto(item_id, campo, valor):
     conn.close()
 
 def deletar_produto(item_id):
-    conn = get_db()
+    conn = get_db_connection()
     c = conn.cursor()
     c.execute("DELETE FROM products WHERE id = ?", (item_id,))
     conn.commit()
@@ -238,9 +253,10 @@ if not st.session_state.logged_in:
                         st.session_state.owner_id = owner_id
                         
                         st.session_state.lista_produtos = carregar_produtos(owner_id)
+                        st.success("Login Aprovado!")
                         reiniciar_app()
                     else:
-                        st.error("Credenciais inválidas ou banco desatualizado. Tente 'Resetar Banco de Dados' na esquerda.")
+                        st.error("Usuário não encontrado. Crie uma conta nova.")
 
         with tab_criar:
             with st.container(border=True):
@@ -254,11 +270,14 @@ if not st.session_state.logged_in:
                 plan_code = plan_choice.split(" ")[0]
                 
                 if st.button("CRIAR CONTA", type="primary"):
-                    res = add_user(new_user, new_pass, new_name, plan_code)
-                    if res > 0:
-                        st.success("Sucesso! Faça login na aba 'Acessar Conta'.")
+                    if new_user and new_pass:
+                        res = add_user(new_user, new_pass, new_name, plan_code)
+                        if res > 0:
+                            st.success("Sucesso! Faça login na aba 'Entrar'.")
+                        else:
+                            st.error("Erro: Usuário já existe.")
                     else:
-                        st.error("Erro: Usuário já existe.")
+                        st.warning("Preencha todos os campos.")
                         
     st.stop()
 
@@ -309,7 +328,7 @@ def calc_reverso(custo, lucro_alvo, t_ml, imp, f_man):
     for tx in [st.session_state.taxa_50_79, st.session_state.taxa_29_50, st.session_state.taxa_12_29]:
         p = (custo + tx + lucro_alvo) / div
         _, lbl = identificar_frete(p)
-        if lbl != "Mínimo": return p
+        if lbl != "Mínimo": return p # Simplificação
     return p1
 
 def add_action():
@@ -392,7 +411,10 @@ with tabs[0]:
             lucro = pf - custos + item['Bonus']
             
             mrg_venda = (lucro/pf*100) if pf > 0 else 0
-            erp_safe = item['PrecoERP'] if item['PrecoERP'] > 0 else 1
+            
+            # Safe get para evitar erro de chave antiga
+            erp_safe = item.get('PrecoERP', 0.0)
+            if erp_safe <= 0: erp_safe = 1.0 # evita div zero
             mrg_erp = (lucro/erp_safe*100)
             
             # Cores
@@ -417,6 +439,10 @@ with tabs[0]:
                     <div class="price-display">Venda<br><b>R$ {pf:.2f}</b></div>
                     <div class="price-display" style="text-align:right;">Lucro<br><span style="color:{'#34C759' if lucro>0 else '#FF3B30'}">R$ {lucro:.2f}</span></div>
                 </div>
+                <div class="card-footer">
+                   <div class="margin-box"><div>Margem Venda</div><div class="margin-val">{mrg_venda:.1f}%</div></div>
+                   <div class="margin-box" style="border-left: 1px solid #eee;"><div>Margem ERP</div><div class="margin-val">{mrg_erp:.1f}%</div></div>
+                </div>
             </div>
             """, unsafe_allow_html=True)
 
@@ -434,14 +460,13 @@ with tabs[0]:
                 
                 st.divider()
                 st.caption(f"Imposto: R$ {imp:.2f} | ML: R$ {com:.2f} | Frete: R$ {frete_val:.2f} ({frete_lbl})")
-                st.caption(f"Margem s/ ERP: {mrg_erp:.1f}%")
                 
                 if st.button("Excluir", key=f"del{item['id']}"):
                     deletar_produto(item['id'])
                     st.session_state.lista_produtos = carregar_produtos(st.session_state.owner_id)
                     st.rerun()
 
-# === ABA 2: DASHBOARDS (SÓ PLATINUM) ===
+# === ABA 2: DASHBOARDS (Só Platinum) ===
 if len(tabs) > 1:
     with tabs[1]:
         if not has_plotly:
@@ -449,8 +474,26 @@ if len(tabs) > 1:
         elif st.session_state.lista_produtos:
             # (Código dos gráficos - Simplificado para caber)
             df = pd.DataFrame(st.session_state.lista_produtos)
-            # Recalcula margens para o gráfico...
-            st.info("Gráficos disponíveis para usuários Platinum.")
-            # ... (Copiar lógica de gráficos da V61 aqui se desejar)
+            
+            # Recalculo para o dataframe
+            def calc_row(x):
+                pf = x['PrecoBase'] * (1 - x['DescontoPct']/100)
+                fr, _ = identificar_frete(pf)
+                if _ == "Manual": fr = x['FreteManual']
+                imp = pf * (st.session_state.imposto_padrao/100)
+                com = pf * (x['TaxaML']/100)
+                luc = pf - (x['CMV'] + x['Extra'] + fr + imp + com) + x['Bonus']
+                return luc
+            
+            df['lucro_real'] = df.apply(calc_row, axis=1)
+            
+            k1, k2 = st.columns(2)
+            k1.metric("Total Produtos", len(df))
+            k2.metric("Lucro Estimado", f"R$ {df['lucro_real'].sum():.2f}")
+            
+            st.divider()
+            st.caption("Visão Exclusiva Platinum")
+            fig = px.bar(df, x='Produto', y='lucro_real', title="Lucro por Produto")
+            st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Sem dados.")
