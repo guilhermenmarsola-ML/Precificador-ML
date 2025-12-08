@@ -322,8 +322,8 @@ def add_action():
         "PrecoBase": p_sug, "DescontoPct": 0.0, "Bonus": 0.0
     }
     
-    salvar_produto_db(st.session_state.owner_id, item)
-    st.session_state.lista_produtos = carregar_produtos_usuario(st.session_state.owner_id)
+    salvar_produto(st.session_state.owner_id, item)
+    st.session_state.lista_produtos = carregar_produtos(st.session_state.owner_id)
     st.toast("Produto salvo!", icon="✅")
     
     # Limpa
@@ -380,12 +380,15 @@ with tabs[0]:
             elif mrg_venda < 15: cls = "pill-yellow"
             else: cls = "pill-green"
             
+            txt_luc = f"R$ {lucro:.2f}"
+            if lucro > 0: txt_luc = "+ " + txt_luc
+
             # Card
             st.markdown(f"""
             <div class="product-card">
                 <div class="card-header" style="padding:0; border:none; margin-bottom:10px;">
                     <div>
-                        <div class="sku-text">{item['MLB']}</div>
+                        <div class="sku-text">{item['MLB']} {item['SKU']}</div>
                         <div class="title-text">{item['Produto']}</div>
                     </div>
                     <div class="pill {cls}">{mrg_venda:.1f}%</div>
@@ -396,7 +399,7 @@ with tabs[0]:
                 </div>
             </div>
             """, unsafe_allow_html=True)
-            
+
             with st.expander("⚙️ Editar"):
                 def update(k, f, i=item['id']):
                     atualizar_produto(i, f, st.session_state[k])
@@ -415,18 +418,29 @@ with tabs[0]:
                 
                 if st.button("Excluir", key=f"del{item['id']}"):
                     deletar_produto(item['id'])
-                    st.session_state.lista_produtos = carregar_produtos_usuario(st.session_state.owner_id)
+                    st.session_state.lista_produtos = carregar_produtos(st.session_state.owner_id)
                     st.rerun()
 
-# === ABA 2: DASHBOARDS (Só Platinum) ===
-if len(tabs) > 1:
+# === ABA 2: DASHBOARDS (SÓ PLATINUM) ===
+if st.session_state.plan == "Platinum" and len(tabs) > 1:
     with tabs[1]:
-        if not has_plotly: st.error("Instale 'plotly'")
-        elif st.session_state.lista_produtos:
-            # (Código dos gráficos - Simplificado para caber)
-            df = pd.DataFrame(st.session_state.lista_produtos)
-            # Recalcula margens para o gráfico...
-            st.info("Gráficos disponíveis para usuários Platinum.")
-            # ... (Copiar lógica de gráficos da V61 aqui se desejar)
+        if not has_plotly:
+            st.error("Instale 'plotly'")
+        elif len(st.session_state.lista_produtos) > 0:
+            df_dash = pd.DataFrame(st.session_state.lista_produtos)
+            # (Lógica de cálculo dos gráficos simplificada para caber)
+            # Recalcula colunas necessárias
+            df_dash['pf'] = df_dash['PrecoBase'] * (1 - df_dash['DescontoPct']/100)
+            df_dash['lucro'] = df_dash.apply(lambda x: x['pf'] - (x['CMV'] + x['Extra'] + (x['pf']*(st.session_state.imposto_padrao+x['TaxaML'])/100)), axis=1)
+            
+            k1, k2 = st.columns(2)
+            k1.metric("Total Produtos", len(df_dash))
+            k2.metric("Lucro Estimado", f"R$ {df_dash['lucro'].sum():.2f}")
+            
+            st.divider()
+            st.caption("Visão Exclusiva Platinum")
+            # Gráfico Simples
+            fig = px.bar(df_dash, x='Produto', y='lucro', title="Lucro por Produto")
+            st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Sem dados.")
