@@ -7,7 +7,7 @@ import base64
 import os
 
 # --- 1. CONFIGURAÇÃO ---
-st.set_page_config(page_title="Precificador PRO - V67 Stable", layout="wide", page_icon="💎")
+st.set_page_config(page_title="Precificador PRO - V68 Fixed", layout="wide", page_icon="💎")
 DB_NAME = 'precificador_saas.db'
 
 # --- 2. FUNÇÕES AUXILIARES ---
@@ -187,16 +187,15 @@ init_var('n_nome', ''); init_var('n_cmv', 32.57); init_var('n_extra', 0.0); init
 init_var('n_taxa', 16.5); init_var('n_erp', 85.44); init_var('n_merp', 20.0); init_var('n_mlb', ''); init_var('n_sku', '')
 init_var('imposto_padrao', 27.0); init_var('taxa_12_29', 6.25); init_var('taxa_29_50', 6.50); init_var('taxa_50_79', 6.75); init_var('taxa_minima', 3.25)
 
-# --- 6. TELA DE LOGIN (COM RESET) ---
+# --- 6. TELA DE LOGIN (COM RESET E KEYS CORRIGIDAS) ---
 if not st.session_state.logged_in:
     
-    # Sidebar de Reset (Salvador da Pátria)
+    # Sidebar de Reset
     with st.sidebar:
         st.header("🛠️ Suporte")
-        st.info("Use este botão se o sistema travar ou para limpar os testes.")
         if st.button("🚨 RESETAR BANCO DE DADOS", type="primary"):
             init_db(reset=True)
-            st.success("Banco resetado! Crie uma conta nova.")
+            st.success("Resetado! Crie conta.")
             time.sleep(1)
             reiniciar_app()
 
@@ -215,19 +214,19 @@ if not st.session_state.logged_in:
         
         with tab_entrar:
             with st.container(border=True):
-                user_login = st.text_input("Usuário / E-mail")
-                pass_login = st.text_input("Senha", type="password")
+                # ADICIONADO KEY PARA EVITAR DUPLICIDADE
+                user_login = st.text_input("Usuário / E-mail", key="login_user")
+                pass_login = st.text_input("Senha", type="password", key="login_pass")
+                
                 if st.button("ENTRAR", type="primary"):
                     u_data = login_user(user_login, pass_login)
                     if u_data:
                         st.session_state.user = u_data
                         st.session_state.logged_in = True
                         
-                        # Define ID do dono dos produtos (Se for colab, pega do chefe)
                         owner_id = u_data['id'] if u_data['owner_id'] == 0 else u_data['owner_id']
                         st.session_state.owner_id = owner_id
                         
-                        # Carrega produtos
                         st.session_state.lista_produtos = carregar_produtos(owner_id)
                         reiniciar_app()
                     else:
@@ -235,9 +234,10 @@ if not st.session_state.logged_in:
 
         with tab_criar:
             with st.container(border=True):
-                new_name = st.text_input("Nome Completo")
-                new_user = st.text_input("E-mail")
-                new_pass = st.text_input("Senha", type="password")
+                # ADICIONADO KEY PARA EVITAR DUPLICIDADE
+                new_name = st.text_input("Nome Completo", key="signup_name")
+                new_user = st.text_input("E-mail", key="signup_email")
+                new_pass = st.text_input("Senha", type="password", key="signup_pass")
                 
                 st.markdown("##### Escolha seu Plano")
                 plan_choice = st.radio("Nível", ["Silver (R$ 49,90)", "Gold (R$ 99,90)", "Platinum (R$ 199,90)"], index=1)
@@ -263,7 +263,7 @@ with st.sidebar:
     # Perfil
     c_img, c_info = st.columns([1, 3])
     with c_img:
-        st.markdown("👤", unsafe_allow_html=True) # Placeholder foto
+        st.markdown("👤", unsafe_allow_html=True)
     with c_info:
         st.markdown(f"**{u['name']}**")
         st.caption(f"{u['plan'].upper()} · {'Ativo'}")
@@ -299,7 +299,7 @@ def calc_reverso(custo, lucro_alvo, t_ml, imp, f_man):
     for tx in [st.session_state.taxa_50_79, st.session_state.taxa_29_50, st.session_state.taxa_12_29]:
         p = (custo + tx + lucro_alvo) / div
         _, lbl = identificar_frete(p)
-        if lbl != "Mínimo": return p # Simplificação
+        if lbl != "Mínimo": return p
     return p1
 
 def add_action():
@@ -341,25 +341,34 @@ tabs = st.tabs(abas)
 with tabs[0]:
     # INPUT
     st.markdown('<div class="apple-card">', unsafe_allow_html=True)
-    c1, c2 = st.columns([1, 2])
-    c1.text_input("SKU/MLB", key="n_mlb")
-    c2.text_input("Produto", key="n_nome")
-    c3, c4, c5 = st.columns(3)
-    c3.number_input("Custo (CMV)", step=0.01, format="%.2f", key="n_cmv")
-    c4.number_input("Frete (>79)", step=0.01, format="%.2f", key="n_frete")
-    c5.number_input("Extras", step=0.01, format="%.2f", key="n_extra")
+    st.caption("NOVO PRODUTO")
+    
+    col_input1 = st.columns([1,2])
+    col_input1[0].text_input("MLB", key="n_mlb")
+    col_input1[1].text_input("Produto", key="n_nome")
+    
+    col_input2 = st.columns(3)
+    col_input2[0].number_input("Custo (CMV)", step=0.01, format="%.2f", key="n_cmv")
+    col_input2[1].number_input("Frete Manual", step=0.01, format="%.2f", key="n_frete")
+    col_input2[2].text_input("SKU", key="n_sku", placeholder="Opcional")
+    
     st.markdown("<hr style='margin:10px 0; border-color:#eee'>", unsafe_allow_html=True)
-    c6, c7, c8 = st.columns(3)
-    c6.number_input("Taxa ML %", step=0.5, format="%.1f", key="n_taxa")
-    c7.number_input("Preço ERP", step=0.01, format="%.2f", key="n_erp")
-    c8.number_input("Margem ERP %", step=1.0, format="%.1f", key="n_merp")
+    
+    col_input3 = st.columns(3)
+    col_input3[0].number_input("Taxa ML %", step=0.5, format="%.1f", key="n_taxa")
+    col_input3[1].number_input("Preço ERP", step=0.01, format="%.2f", key="n_erp")
+    col_input3[2].number_input("Margem ERP %", step=1.0, format="%.1f", key="n_merp")
+    
     st.write("")
-    st.button("CADASTRAR", type="primary", on_click=add_action)
+    if st.session_state.plan == "Silver" and len(st.session_state.lista_produtos) >= 50:
+        st.warning("Faça upgrade para Gold para adicionar mais.")
+    else:
+        st.button("Cadastrar Item", type="primary", use_container_width=True, on_click=add_action)
     st.markdown('</div>', unsafe_allow_html=True)
 
     # LISTA
     if st.session_state.lista_produtos:
-        st.markdown(f"##### {len(st.session_state.lista_produtos)} produtos")
+        st.caption(f"Gerenciando {len(st.session_state.lista_produtos)} produtos")
         
         for item in reversed(st.session_state.lista_produtos):
             # Recalcula Live
@@ -373,7 +382,11 @@ with tabs[0]:
             lucro = pf - custos + item['Bonus']
             
             mrg_venda = (lucro/pf*100) if pf > 0 else 0
-            mrg_erp = (lucro/item['PrecoERP']*100) if item['PrecoERP'] > 0 else 0
+            
+            # Safe get para evitar erro de chave antiga
+            erp_safe = item.get('PrecoERP', 0.0)
+            if erp_safe <= 0: erp_safe = 1.0 # evita div zero
+            mrg_erp = (lucro/erp_safe*100)
             
             # Cores
             if mrg_venda < 8: cls = "pill-red"
@@ -421,26 +434,34 @@ with tabs[0]:
                     st.session_state.lista_produtos = carregar_produtos(st.session_state.owner_id)
                     st.rerun()
 
-# === ABA 2: DASHBOARDS (SÓ PLATINUM) ===
-if st.session_state.plan == "Platinum" and len(tabs) > 1:
+# === ABA 2: DASHBOARDS (Só Platinum) ===
+if len(tabs) > 1:
     with tabs[1]:
         if not has_plotly:
             st.error("Instale 'plotly'")
-        elif len(st.session_state.lista_produtos) > 0:
-            df_dash = pd.DataFrame(st.session_state.lista_produtos)
-            # (Lógica de cálculo dos gráficos simplificada para caber)
-            # Recalcula colunas necessárias
-            df_dash['pf'] = df_dash['PrecoBase'] * (1 - df_dash['DescontoPct']/100)
-            df_dash['lucro'] = df_dash.apply(lambda x: x['pf'] - (x['CMV'] + x['Extra'] + (x['pf']*(st.session_state.imposto_padrao+x['TaxaML'])/100)), axis=1)
+        elif st.session_state.lista_produtos:
+            # (Código dos gráficos)
+            df = pd.DataFrame(st.session_state.lista_produtos)
+            
+            # Recalculo para o dataframe
+            def calc_row(x):
+                pf = x['PrecoBase'] * (1 - x['DescontoPct']/100)
+                fr, _ = identificar_frete(pf)
+                if _ == "Manual": fr = x['FreteManual']
+                imp = pf * (st.session_state.imposto_padrao/100)
+                com = pf * (x['TaxaML']/100)
+                luc = pf - (x['CMV'] + x['Extra'] + fr + imp + com) + x['Bonus']
+                return luc
+            
+            df['lucro_real'] = df.apply(calc_row, axis=1)
             
             k1, k2 = st.columns(2)
-            k1.metric("Total Produtos", len(df_dash))
-            k2.metric("Lucro Estimado", f"R$ {df_dash['lucro'].sum():.2f}")
+            k1.metric("Total Produtos", len(df))
+            k2.metric("Lucro Estimado", f"R$ {df['lucro_real'].sum():.2f}")
             
             st.divider()
             st.caption("Visão Exclusiva Platinum")
-            # Gráfico Simples
-            fig = px.bar(df_dash, x='Produto', y='lucro', title="Lucro por Produto")
+            fig = px.bar(df, x='Produto', y='lucro_real', title="Lucro por Produto")
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Sem dados.")
