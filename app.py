@@ -1,29 +1,105 @@
 import streamlit as st
 import pandas as pd
-import sqlite3
-import hashlib
 import time
-import os
 import re
+import os
 from datetime import datetime
 
 # --- 1. CONFIGURAÇÃO ---
-st.set_page_config(page_title="Precificador V64 - Restore", layout="centered", page_icon="💎")
-DB_NAME = 'precificador_v64_restore.db' # Banco novo para garantir limpeza
+st.set_page_config(page_title="Precificador 2026 - V64 SafeDB", layout="centered", page_icon="💎")
 
-# Verifica Plotly
+DB_FILE = "banco_dados.csv"
+
+# Tenta importar Plotly
 try:
     import plotly.express as px
     has_plotly = True
 except ImportError:
     has_plotly = False
 
-# --- 2. FUNÇÕES AUXILIARES ---
-def reiniciar_app():
-    time.sleep(0.1)
-    if hasattr(st, 'rerun'): st.rerun()
-    else: st.experimental_rerun()
+# --- 2. SISTEMA DE BANCO DE DADOS (BLINDADO) ---
+def carregar_dados_seguro():
+    # Verifica se arquivo existe e não está vazio (size > 0)
+    if os.path.exists(DB_FILE):
+        if os.path.getsize(DB_FILE) > 0:
+            try:
+                df = pd.read_csv(DB_FILE)
+                # Verifica se tem as colunas mínimas necessárias
+                if 'Produto' in df.columns:
+                    return df.to_dict('records')
+            except:
+                pass # Se der erro na leitura, retorna vazio mas não trava
+    return []
 
+def salvar_dados_seguro():
+    try:
+        if st.session_state.lista_produtos:
+            df = pd.DataFrame(st.session_state.lista_produtos)
+            df.to_csv(DB_FILE, index=False)
+        else:
+            # Se lista vazia, apaga o arquivo para não dar erro de leitura depois
+            if os.path.exists(DB_FILE): os.remove(DB_FILE)
+        
+        st.session_state.ultimo_save = datetime.now().strftime("%H:%M:%S")
+    except Exception as e:
+        # Não trava o app, apenas avisa no console/log
+        print(f"Erro ao salvar: {e}")
+
+# INICIALIZAÇÃO SEGURA
+if 'lista_produtos' not in st.session_state:
+    st.session_state.lista_produtos = carregar_dados_seguro()
+
+if 'ultimo_save' not in st.session_state:
+    st.session_state.ultimo_save = "-"
+
+def init_state(key, value):
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+init_state('n_mlb', '') 
+init_state('n_sku', '') 
+init_state('n_nome', '')
+init_state('n_cmv', 32.57)
+init_state('n_extra', 0.00)
+init_state('n_frete', 18.86)
+init_state('n_taxa', 16.5)
+init_state('n_erp', 85.44)
+init_state('n_merp', 20.0)
+
+# --- 3. DESIGN SYSTEM ---
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
+    .stApp { background-color: #FAFAFA; font-family: 'Inter', sans-serif; }
+    
+    .input-card { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #EFEFEF; margin-bottom: 20px; }
+    .feed-card { background: white; border-radius: 16px; border: 1px solid #DBDBDB; box-shadow: 0 2px 5px rgba(0,0,0,0.02); margin-bottom: 15px; overflow: hidden; }
+    .card-header { padding: 15px 20px; border-bottom: 1px solid #F0F0F0; display: flex; justify-content: space-between; align-items: center; }
+    .card-body { padding: 20px; text-align: center; }
+    .card-footer { background-color: #F8F9FA; padding: 10px 20px; border-top: 1px solid #F0F0F0; display: flex; justify-content: space-between; font-size: 11px; color: #666; }
+    .margin-box { text-align: center; flex: 1; }
+    .margin-val { font-weight: 700; font-size: 12px; color: #333; }
+
+    .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
+    .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
+    .price-hero { font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0; }
+    
+    .pill { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; display: inline-block; }
+    .pill-green { background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5; }
+    .pill-yellow { background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D; }
+    .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
+
+    .audit-box { background-color: #F8F9FA; border: 1px solid #E9ECEF; border-radius: 8px; padding: 15px; font-family: 'Courier New', monospace; font-size: 12px; color: #333; margin-top: 10px; }
+    .audit-line { display: flex; justify-content: space-between; margin-bottom: 4px; }
+    .audit-bold { font-weight: bold; color: #000; }
+
+    div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input { background-color: #FAFAFA !important; border: 1px solid #E5E5E5 !important; color: #333 !important; border-radius: 8px !important; }
+    div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border-radius: 10px; height: 50px; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
+    div[data-testid="stSelectbox"] > div > div { background-color: white !important; border: 1px solid #2563EB !important; border-radius: 12px !important; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.1); }
+</style>
+""", unsafe_allow_html=True)
+
+# --- 4. FUNÇÕES ---
 def limpar_valor_dinheiro(valor):
     try:
         if pd.isna(valor) or str(valor).strip() == "" or str(valor).strip() == "-": return 0.0
@@ -36,368 +112,156 @@ def limpar_valor_dinheiro(valor):
         return float(valor_str)
     except: return 0.0
 
-# Planos
-PLAN_LIMITS = {
-    "Silver": {"product_limit": 50, "collab_limit": 1, "dashboards": False, "price": "R$ 49,90"},
-    "Gold": {"product_limit": 999999, "collab_limit": 4, "dashboards": False, "price": "R$ 99,90"},
-    "Platinum": {"product_limit": 999999, "collab_limit": 999999, "dashboards": True, "price": "R$ 199,90"}
-}
+def reiniciar_app():
+    time.sleep(0.1)
+    if hasattr(st, 'rerun'): st.rerun()
+    else: st.experimental_rerun()
 
-# --- 3. BANCO DE DADOS ---
-def get_db_connection():
-    return sqlite3.connect(DB_NAME, check_same_thread=False)
-
-def init_db(reset=False):
-    if reset and os.path.exists(DB_NAME):
-        try: os.remove(DB_NAME)
-        except: pass
-        
-    conn = get_db_connection()
-    c = conn.cursor()
-    
-    # Usuários
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE, password TEXT, name TEXT, plan TEXT, 
-            is_active BOOLEAN, photo_base64 TEXT, owner_id INTEGER DEFAULT 0
-        )
-    ''')
-    
-    # Produtos (Schema da V64 - Estável)
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS products (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            owner_id INTEGER,
-            mlb TEXT, sku TEXT, nome TEXT,
-            cmv REAL, frete_manual REAL, extra REAL,
-            taxa_ml REAL, preco_erp REAL, margem_erp REAL,
-            preco_sugerido REAL, preco_usado REAL,
-            desc_pct REAL, bonus REAL
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-if not os.path.exists(DB_NAME): init_db()
-
-def make_hashes(p): return hashlib.sha256(str.encode(p)).hexdigest()
-def check_hashes(p, h): return make_hashes(p) == h
-
-# CRUD USER
-def add_user(username, password, name, plan, owner_id=0):
-    conn = get_db_connection()
-    c = conn.cursor()
-    try:
-        c.execute('INSERT INTO users(username, password, name, plan, is_active, owner_id) VALUES (?,?,?,?,?,?)', 
-                  (username, make_hashes(password), name, plan, True, owner_id))
-        conn.commit()
-        return c.lastrowid
-    except: return -1
-    finally: conn.close()
-
-def login_user(username, password):
-    conn = get_db_connection()
-    c = conn.cursor()
-    try:
-        c.execute('SELECT * FROM users WHERE username = ?', (username,))
-        data = c.fetchone()
-        if data and data[5] and check_hashes(password, data[2]):
-            return {"id": data[0], "name": data[3], "plan": data[4], "owner_id": data[7], "username": username}
-    except: pass
-    finally: conn.close()
-    return None
-
-# CRUD PRODUTOS
-def carregar_produtos(owner_id):
-    conn = get_db_connection()
-    try:
-        df = pd.read_sql_query("SELECT * FROM products WHERE owner_id = ?", conn, params=(owner_id,))
-        # Renomeia colunas para o padrão do App
-        lista = []
-        for _, row in df.iterrows():
-            lista.append({
-                "id": row['id'], 
-                "MLB": row['mlb'], "SKU": row['sku'], "Produto": row['nome'],
-                "CMV": row['cmv'], "FreteManual": row['frete_manual'], "Extra": row['extra'],
-                "TaxaML": row['taxa_ml'], "PrecoERP": row['preco_erp'], "MargemERP": row['margem_erp'],
-                "PrecoSugerido": row['preco_sugerido'], "PrecoUsado": row['preco_usado'],
-                "DescontoPct": row['desc_pct'], "Bonus": row['bonus']
-            })
-        return lista
-    except: return []
-    finally: conn.close()
-
-def salvar_produto(owner_id, item):
-    conn = get_db_connection()
-    c = conn.cursor()
-    c.execute('''INSERT INTO products (
-        owner_id, mlb, sku, nome, cmv, frete_manual, extra, taxa_ml, 
-        preco_erp, margem_erp, preco_sugerido, preco_usado, desc_pct, bonus
-    ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)''', (
-        owner_id, item.get('MLB',''), item.get('SKU',''), item.get('Produto',''), 
-        item.get('CMV',0), item.get('FreteManual',0), item.get('Extra',0), item.get('TaxaML',0),
-        item.get('PrecoERP',0), item.get('MargemERP',0), item.get('PrecoSugerido',0), 
-        item.get('PrecoUsado',0), item.get('DescontoPct',0), item.get('Bonus',0)
-    ))
-    conn.commit()
-    conn.close()
-
-def deletar_produto(item_id):
-    conn = get_db_connection()
-    conn.execute("DELETE FROM products WHERE id = ?", (item_id,))
-    conn.commit()
-    conn.close()
-
-def atualizar_campo_db(item_id, campo, valor):
-    conn = get_db_connection()
-    mapa = {'PrecoUsado': 'preco_usado', 'DescontoPct': 'desc_pct', 'Bonus': 'bonus', 'CMV': 'cmv', 'PrecoERP': 'preco_erp'}
-    if campo in mapa:
-        conn.execute(f"UPDATE products SET {mapa[campo]} = ? WHERE id = ?", (valor, item_id))
-        conn.commit()
-    conn.close()
-
-# --- 4. CSS (VISUAL APPLE/INSTAGRAM V64) ---
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
-    .stApp { background-color: #F5F5F7; font-family: 'Inter', sans-serif; color: #1D1D1F; }
-    
-    .login-container { max-width: 400px; margin: 0 auto; background: white; padding: 40px; border-radius: 24px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); }
-    .input-card { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; border: 1px solid #E5E5EA; }
-    .product-card { background: white; border-radius: 16px; padding: 16px; margin-bottom: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.03); border: 1px solid #E5E5EA; }
-    
-    div.stButton > button[kind="primary"] { background-color: #0071E3; color: white; border-radius: 12px; height: 48px; border: none; font-weight: 600; width: 100%; }
-    div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input { background-color: #FAFAFA !important; border: 1px solid #D1D1D6 !important; border-radius: 8px !important; }
-    div[data-testid="stSelectbox"] > div > div { background-color: white !important; border: 1px solid #D1D1D6 !important; border-radius: 12px !important; }
-
-    .pill { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; display: inline-block; }
-    .pill-green { background: #E6FFFA; color: #047857; }
-    .pill-yellow { background: #FFFBEB; color: #B45309; }
-    .pill-red { background: #FEF2F2; color: #DC2626; }
-    
-    .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; }
-    .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
-    .price-display { font-size: 14px; color: #1D1D1F; font-weight: 500; }
-    
-    .card-footer { background-color: #F8F9FA; padding: 10px 20px; border-top: 1px solid #F0F0F0; display: flex; justify-content: space-between; font-size: 11px; color: #666; }
-    .margin-box { text-align: center; flex: 1; }
-    
-    .audit-box { background: #F9FAFB; padding: 15px; border-radius: 8px; border: 1px dashed #D1D5DB; font-family: monospace; font-size: 12px; margin-top: 10px;}
-    .audit-line { display: flex; justify-content: space-between; margin-bottom: 5px; }
-    .audit-bold { font-weight: bold; color: #000; }
-</style>
-""", unsafe_allow_html=True)
-
-# --- 5. ESTADO ---
-if 'logged_in' not in st.session_state: st.session_state.logged_in = False
-if 'user' not in st.session_state: st.session_state.user = {}
-if 'lista_produtos' not in st.session_state: st.session_state.lista_produtos = []
-
-# Auto-Reparo
-def sanear_dados():
-    if st.session_state.lista_produtos:
-        fixed = []
-        for p in st.session_state.lista_produtos:
-            # Defaults V64
-            if 'PrecoBase' not in p: p['PrecoBase'] = 0.0
-            if 'DescontoPct' not in p: p['DescontoPct'] = 0.0
-            if 'Bonus' not in p: p['Bonus'] = 0.0
-            if 'CMV' not in p: p['CMV'] = 0.0
-            if 'PrecoERP' not in p: p['PrecoERP'] = 0.0
-            if 'PrecoUsado' not in p: p['PrecoUsado'] = 0.0
-            if 'PrecoSugerido' not in p: p['PrecoSugerido'] = 0.0
-            if 'FreteManual' not in p: p['FreteManual'] = 0.0
-            if 'Extra' not in p: p['Extra'] = 0.0
-            if 'Produto' not in p: p['Produto'] = 'Sem Nome'
-            fixed.append(p)
-        st.session_state.lista_produtos = fixed
-
-sanear_dados()
-
-def init_var(k, v): 
-    if k not in st.session_state: st.session_state[k] = v
-init_var('n_nome', ''); init_var('n_cmv', 32.57); init_var('n_extra', 0.0); init_var('n_frete', 18.86)
-init_var('n_taxa', 16.5); init_var('n_erp', 85.44); init_var('n_merp', 20.0); init_var('n_mlb', ''); init_var('n_sku', '')
-init_var('imposto_padrao', 27.0); init_var('n_desc', 0.0); init_var('n_bonus', 0.0)
-init_var('taxa_12_29', 6.25); init_var('taxa_29_50', 6.50); init_var('taxa_50_79', 6.75); init_var('taxa_minima', 3.25)
-
-# --- 6. TELA DE LOGIN ---
-if not st.session_state.logged_in:
-    with st.sidebar:
-        st.header("Suporte")
-        if st.button("🚨 RESET TOTAL", type="primary"):
-            init_db(reset=True)
-            st.success("Resetado! Crie conta."); time.sleep(1); reiniciar_app()
-
-    st.markdown("<br>", unsafe_allow_html=True)
-    col1, col2, col3 = st.columns([1, 2, 1])
-    with col2:
-        st.markdown("<h1 style='text-align:center; color:#0071E3;'>Precificador PRO</h1>", unsafe_allow_html=True)
-        t1, t2 = st.tabs(["Entrar", "Criar Conta"])
-        with t1:
-            with st.container(border=True):
-                u_in = st.text_input("Usuário", key="li_u")
-                p_in = st.text_input("Senha", type="password", key="li_p")
-                if st.button("ENTRAR", type="primary"):
-                    res = login_user(u_in, p_in)
-                    if res:
-                        st.session_state.user = res
-                        st.session_state.logged_in = True
-                        st.session_state.owner_id = res['id'] if res['owner_id'] == 0 else res['owner_id']
-                        st.session_state.lista_produtos = carregar_produtos(st.session_state.owner_id)
-                        sanear_dados()
-                        reiniciar_app()
-                    else: st.error("Login falhou.")
-        with t2:
-            with st.container(border=True):
-                rn = st.text_input("Nome", key="rg_n")
-                ru = st.text_input("Email", key="rg_u")
-                rp = st.text_input("Senha", type="password", key="rg_p")
-                rpl = st.selectbox("Plano", ["Silver (R$49)", "Gold (R$99)", "Platinum (R$199)"])
-                if st.button("CRIAR CONTA", type="primary"):
-                    if add_user(ru, rp, rn, rpl.split()[0]) > 0: st.success("Criado! Faça login.")
-                    else: st.error("Erro.")
-    st.stop()
-
-# ==============================================================================
-# ÁREA LOGADA
-# ==============================================================================
-
+# --- 5. SIDEBAR ---
 with st.sidebar:
-    u = st.session_state.user
-    st.markdown(f"**{u['name']}**")
-    st.caption(f"{u['plan']}")
+    st.header("Ajustes")
     
-    if st.button("Sair"):
-        st.session_state.logged_in = False
+    # --- CONTROLE DE DADOS ---
+    st.markdown("### 💾 Dados")
+    if st.button("Forçar Salvamento"):
+        salvar_dados_seguro()
+        st.success("Salvo!")
+    
+    if st.button("⚠️ Resetar Banco de Dados"):
+        st.session_state.lista_produtos = []
+        salvar_dados_seguro() # Salva vazio
         reiniciar_app()
-    
-    st.divider()
-    st.markdown("### Configurações")
-    st.session_state.imposto_padrao = st.number_input("Impostos %", value=st.session_state.imposto_padrao, step=0.5)
-    with st.expander("Frete ML"):
-        st.session_state.taxa_12_29 = st.number_input("12-29", value=st.session_state.taxa_12_29)
-        st.session_state.taxa_29_50 = st.number_input("29-50", value=st.session_state.taxa_29_50)
-        st.session_state.taxa_50_79 = st.number_input("50-79", value=st.session_state.taxa_50_79)
-        st.session_state.taxa_minima = st.number_input("Min", value=st.session_state.taxa_minima)
         
+    st.caption(f"Último save: {st.session_state.ultimo_save}")
     st.divider()
-    # IMPORTADOR V64 RESTAURADO
+    
+    imposto_padrao = st.number_input("Impostos (%)", value=27.0, step=0.5)
+    with st.expander("Tabela Frete ML (<79)", expanded=True):
+        taxa_12_29 = st.number_input("12-29", value=6.25)
+        taxa_29_50 = st.number_input("29-50", value=6.50)
+        taxa_50_79 = st.number_input("50-79", value=6.75)
+        taxa_minima = st.number_input("Min", value=3.25)
+    st.divider()
+    
+    # IMPORTAÇÃO
     st.markdown("### 📂 Importar")
     uploaded_file = st.file_uploader("Excel/CSV", type=['xlsx', 'csv'])
-    if uploaded_file:
+    
+    if uploaded_file is not None:
         try:
             xl = pd.ExcelFile(uploaded_file)
-            aba = st.selectbox("Aba", xl.sheet_names)
-            h_row = st.number_input("Linha Header", value=8, min_value=0)
+            aba_selecionada = st.selectbox("1. Aba:", xl.sheet_names, index=0)
+            header_row = st.number_input("2. Linha Cabeçalho:", value=8, min_value=0)
             
-            df_prev = xl.parse(aba, header=h_row, nrows=2)
-            cols = [str(c) for c in df_prev.columns if "Unnamed" not in str(c)]
+            df_preview = xl.parse(aba_selecionada, header=header_row, nrows=3)
+            cols = [str(c) for c in df_preview.columns if "Unnamed" not in str(c)]
             
-            st.caption("Mapear Colunas:")
-            def gidx(k): 
-                for i, o in enumerate(cols): 
-                    if isinstance(k, list):
-                        for kw in k:
-                            if kw.lower() in str(o).lower(): return i
-                    elif k.lower() in str(o).lower(): return i
+            st.caption("3. Mapear Colunas:")
+            def get_idx(opts, keys):
+                if isinstance(keys, str): keys = [keys]
+                for i, o in enumerate(opts):
+                    for k in keys: 
+                        if k.lower() in str(o).lower(): return i
                 return 0
 
-            c_prod = st.selectbox("Produto", cols, index=gidx(["Produto", "Nome"]))
-            c_mlb = st.selectbox("MLB", cols, index=gidx(["Anúncio", "MLB"]))
-            c_sku = st.selectbox("SKU", cols, index=gidx(["SKU", "Ref"]))
-            c_cmv = st.selectbox("CMV", cols, index=gidx("CMV"))
-            c_erp = st.selectbox("Preço ERP", cols, index=gidx(["ERP", "Base", "GRA"]))
-            c_prc = st.selectbox("Preço Venda", cols, index=gidx(["Preço", "Venda"]))
-            c_desc = st.selectbox("Desconto %", cols, index=gidx(["Desconto", "%"]))
-            c_bonus = st.selectbox("Bônus", cols, index=gidx(["Bônus", "Rebate"]))
+            c_prod = st.selectbox("Produto", cols, index=get_idx(cols, ["Produto", "Nome"]))
+            c_mlb = st.selectbox("MLB", cols, index=get_idx(cols, ["Anúncio", "MLB"]))
+            c_sku = st.selectbox("SKU", cols, index=get_idx(cols, ["SKU", "Ref"]))
+            c_cmv = st.selectbox("CMV", cols, index=get_idx(cols, "CMV"))
+            c_prc = st.selectbox("Preço Venda", cols, index=get_idx(cols, ["Preço", "Venda"]))
+            c_erp = st.selectbox("Preço ERP", cols, index=get_idx(cols, ["ERP", "Base", "GRA"]))
+            c_desc = st.selectbox("Desconto %", cols, index=get_idx(cols, ["Desconto", "%"]))
+            c_bonus = st.selectbox("Rebate/Bônus", cols, index=get_idx(cols, ["Bônus", "Rebate", "Bonus"]))
             
-            if st.button("Importar Dados", type="primary"):
-                df = xl.parse(aba, header=h_row)
+            if st.button("✅ Importar", type="primary"):
+                df = xl.parse(aba_selecionada, header=header_row)
                 cnt = 0
-                st.session_state.lista_produtos = [] # Limpa ao importar
+                st.session_state.lista_produtos = []
                 for _, row in df.iterrows():
                     try:
                         p = str(row[c_prod])
                         if not p or p == 'nan': continue
-                        
                         cmv = limpar_valor_dinheiro(row[c_cmv])
                         pb = limpar_valor_dinheiro(row[c_prc])
                         erp = limpar_valor_dinheiro(row[c_erp])
                         if erp == 0: erp = pb
-                        
                         desc = limpar_valor_dinheiro(row[c_desc])
                         bonus = limpar_valor_dinheiro(row[c_bonus])
                         if 0 < desc < 1.0: desc = desc * 100
-                        
-                        item = {
-                            "MLB": str(row.get(c_mlb, "")), "SKU": str(row.get(c_sku, "")), "Produto": p,
+                        sku_val = str(row[c_sku]) if c_sku in row else ""
+                        if sku_val == 'nan': sku_val = ""
+                        st.session_state.lista_produtos.append({
+                            "id": int(time.time()*1000)+_, 
+                            "MLB": str(row[c_mlb]), "SKU": sku_val, "Produto": p,
                             "CMV": cmv, "FreteManual": 18.86, "TaxaML": 16.5, "Extra": 0.0,
-                            "PrecoERP": erp, "MargemERP": st.session_state.n_merp, 
-                            "PrecoBase": pb, "PrecoSugerido": pb, "PrecoUsado": pb, # Assume usado = importado
-                            "DescontoPct": desc, "Bonus": bonus       
-                        }
-                        salvar_produto(st.session_state.owner_id, item)
+                            "PrecoERP": erp, "MargemERP": 20.0, "PrecoBase": pb, "DescontoPct": desc, "Bonus": bonus       
+                        })
                         cnt += 1
                     except: continue
-                st.session_state.lista_produtos = carregar_produtos(st.session_state.owner_id)
-                st.success(f"{cnt} importados!")
+                
+                salvar_dados_seguro() # Salva no final da importação
+                st.toast(f"{cnt} importados!", icon="🚀")
                 time.sleep(1)
                 reiniciar_app()
         except Exception as e: st.error(f"Erro: {e}")
 
-# --- LÓGICA DE CÁLCULO V64 ---
-def identificar_frete(p):
-    if p >= 79: return 0.0, "Manual"
-    if 50 <= p < 79: return st.session_state.taxa_50_79, "Tab 50-79"
-    if 29 <= p < 50: return st.session_state.taxa_29_50, "Tab 29-50"
-    if 12.5 <= p < 29: return st.session_state.taxa_12_29, "Tab 12-29"
-    return st.session_state.taxa_minima, "Mínimo"
+# --- 6. LÓGICA ---
+def identificar_faixa_frete(preco):
+    if preco >= 79.00: return "manual", 0.0, "Acima de 79 (Manual)"
+    elif 50.00 <= preco < 79.00: return "Tab. 50-79", taxa_50_79, "Faixa R$ 50-79"
+    elif 29.00 <= preco < 50.00: return "Tab. 29-50", taxa_29_50, "Faixa R$ 29-50"
+    elif 12.50 <= preco < 29.00: return "Tab. 12-29", taxa_12_29, "Faixa R$ 12-29"
+    else: return "Tab. Mínima", taxa_minima, "Abaixo de R$ 12.50"
 
-def calc_reverso(custo, lucro_alvo, t_ml, imp, f_man):
-    div = 1 - ((t_ml + imp)/100)
-    if div <= 0: return 0
-    p1 = (custo + f_man + lucro_alvo) / div
-    if p1 >= 79: return p1
-    for tx in [st.session_state.taxa_50_79, st.session_state.taxa_29_50, st.session_state.taxa_12_29]:
-        p = (custo + tx + lucro_alvo) / div
-        _, lbl = identificar_frete(p)
-        if lbl != "Mínimo": return p
-    return p1
+def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, imposto_pct, frete_manual):
+    custos_fixos_1 = custo_base + frete_manual
+    divisor = 1 - ((taxa_ml_pct + imposto_pct) / 100)
+    if divisor <= 0: return 0.0, "Erro"
+    preco_est_1 = (custos_fixos_1 + lucro_alvo_reais) / divisor
+    if preco_est_1 >= 79.00: return preco_est_1, "Frete Manual"
+    for taxa, nome, p_min, p_max in [
+        (taxa_50_79, "Tab. 50-79", 50, 79), (taxa_29_50, "Tab. 29-50", 29, 50), (taxa_12_29, "Tab. 12-29", 12.5, 29)
+    ]:
+        custos = custo_base + taxa
+        preco = (custos + lucro_alvo_reais) / divisor
+        if p_min <= preco < p_max: return preco, nome
+    return preco_est_1, "Frete Manual"
 
-def add_action():
+def adicionar_produto_action():
     if not st.session_state.n_nome:
-        st.toast("Nome obrigatório!", icon="⚠️"); return
-
-    lucro = st.session_state.n_erp * (st.session_state.n_merp / 100)
-    p_sug = calc_reverso(
-        st.session_state.n_cmv + st.session_state.n_extra, lucro,
-        st.session_state.n_taxa, st.session_state.imposto_padrao, st.session_state.n_frete
+        st.toast("Nome obrigatório!", icon="⚠️")
+        return
+    lucro_alvo = st.session_state.n_erp * (st.session_state.n_merp / 100)
+    preco_sug, _ = calcular_preco_sugerido_reverso(
+        st.session_state.n_cmv + st.session_state.n_extra, lucro_alvo,
+        st.session_state.n_taxa, imposto_padrao, st.session_state.n_frete
     )
-    
-    item = {
-        "MLB": st.session_state.n_mlb, "SKU": st.session_state.n_sku, "Produto": st.session_state.n_nome,
-        "CMV": st.session_state.n_cmv, "FreteManual": st.session_state.n_frete, "TaxaML": st.session_state.n_taxa,
-        "Extra": st.session_state.n_extra, "PrecoERP": st.session_state.n_erp, "MargemERP": st.session_state.n_merp,
-        "PrecoSugerido": p_sug, "PrecoUsado": p_sug, "PrecoBase": p_sug,
-        "DescontoPct": 0.0, "Bonus": 0.0
-    }
-    
-    salvar_produto(st.session_state.owner_id, item)
-    st.session_state.lista_produtos = carregar_produtos(st.session_state.owner_id)
-    st.toast("Produto salvo!", icon="✅")
+    st.session_state.lista_produtos.append({
+        "id": int(time.time()*1000), "MLB": st.session_state.n_mlb, "SKU": st.session_state.n_sku, 
+        "Produto": st.session_state.n_nome, "CMV": st.session_state.n_cmv, "FreteManual": st.session_state.n_frete,
+        "TaxaML": st.session_state.n_taxa, "Extra": st.session_state.n_extra, "PrecoERP": st.session_state.n_erp, 
+        "MargemERP": st.session_state.n_merp, "PrecoBase": preco_sug, "DescontoPct": 0.0, "Bonus": 0.0
+    })
+    salvar_dados_seguro()
+    st.toast("Salvo!", icon="✅")
+    st.session_state.n_mlb = ""
+    st.session_state.n_sku = "" 
     st.session_state.n_nome = ""
+    st.session_state.n_cmv = 0.00
+    st.session_state.n_extra = 0.00
 
-# --- INTERFACE PRINCIPAL ---
-st.title("Área de Trabalho")
+# ==============================================================================
+# 7. INTERFACE
+# ==============================================================================
 
-abas = ["⚡ Precificador"]
-if PLAN_LIMITS[st.session_state.user['plan']]['dashboards']: abas.append("📊 BI")
-tabs = st.tabs(abas)
+st.markdown('<div style="text-align:center; padding-bottom:10px;">', unsafe_allow_html=True)
+st.title("Precificador 2026")
+st.markdown('</div>', unsafe_allow_html=True)
 
-with tabs[0]:
-    # BUSCA AUTOCOMPLETE (V64)
+tab_op, tab_bi = st.tabs(["⚡ Operacional", "📊 Dashboards"])
+
+# --- ABA 1 ---
+with tab_op:
     mapa_busca = {}
     opcoes_busca = []
     if st.session_state.lista_produtos:
@@ -416,25 +280,14 @@ with tabs[0]:
     else:
         temp_list = []
         for item in st.session_state.lista_produtos:
-            # Proteção contra dados faltantes
-            if 'PrecoUsado' not in item: continue
-            
-            # CÁLCULO BASEADO NO PREÇO USADO (Que você edita)
-            pf = item['PrecoUsado'] * (1 - item['DescontoPct']/100)
-            
-            # Frete Inteligente
-            fr_val, fr_lbl = identificar_frete(pf)
-            if fr_lbl == "Manual": fr_val = item['FreteManual']
-            
-            imp = pf * (st.session_state.imposto_padrao/100)
-            com = pf * (item['TaxaML']/100)
-            custos = item['CMV'] + item['Extra'] + fr_val + imp + com
-            lucro = pf - custos + item['Bonus']
-            
-            mrg_v = (lucro/pf*100) if pf > 0 else 0
-            
+            if 'PrecoERP' not in item: item['PrecoERP'] = 0.0
+            pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
+            _, fr, _ = identificar_faixa_frete(pf)
+            if _ == "manual": fr = item['FreteManual']
+            luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
+            mrg = (luc/pf*100) if pf else 0
             view_item = item.copy()
-            view_item.update({'_pf': pf, '_mrg': mrg_v})
+            view_item.update({'_pf': pf, '_luc': luc, '_mrg': mrg})
             temp_list.append(view_item)
             
         if ordem_sort == "A-Z": temp_list.sort(key=lambda x: str(x['Produto']).lower())
@@ -461,132 +314,158 @@ with tabs[0]:
         c6.number_input("Preço ERP", step=0.01, format="%.2f", key="n_erp")
         c7.number_input("Margem ERP %", step=1.0, format="%.1f", key="n_merp")
         st.write("")
-        st.button("Cadastrar Item", type="primary", use_container_width=True, on_click=add_action)
+        st.button("Cadastrar Item", type="primary", use_container_width=True, on_click=adicionar_produto_action)
         st.markdown('</div>', unsafe_allow_html=True)
 
     if lista_final:
         st.caption(f"Visualizando {len(lista_final)} produtos")
         for item in lista_final:
+            pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
+            nome_frete_real, valor_frete_real, motivo_frete = identificar_faixa_frete(pf)
+            if nome_frete_real == "manual": valor_frete_real = item['FreteManual']
+            imposto_val = pf * (imposto_padrao / 100)
+            comissao_val = pf * (item['TaxaML'] / 100)
+            custos_totais = item['CMV'] + item['Extra'] + valor_frete_real + imposto_val + comissao_val
+            lucro_final = pf - custos_totais + item['Bonus']
             
-            # Recálculo para exibição
-            pf = item['PrecoUsado'] * (1 - item['DescontoPct']/100)
-            fr_val, fr_lbl = identificar_frete(pf)
-            if fr_lbl == "Manual": fr_val = item['FreteManual']
-            imp = pf * (st.session_state.imposto_padrao/100)
-            com = pf * (item['TaxaML']/100)
-            custos = item['CMV'] + item['Extra'] + fr_val + imp + com
-            lucro = pf - custos + item['Bonus']
-            mrg_v = (lucro/pf*100) if pf > 0 else 0
-            erp_safe = item['PrecoERP'] if item['PrecoERP'] > 0 else 1
-            mrg_erp = (lucro/erp_safe*100)
+            margem_venda = (lucro_final / pf * 100) if pf > 0 else 0
+            erp_val = item.get('PrecoERP', 0.0)
+            margem_erp = (lucro_final / erp_val * 100) if erp_val > 0 else 0
             
-            # Cores
-            if mrg_v < 8: cls = "pill-red"
-            elif mrg_v < 15: cls = "pill-yellow"
-            else: cls = "pill-green"
-            
-            txt_luc = f"+ R$ {lucro:.2f}" if lucro > 0 else f"- R$ {abs(lucro):.2f}"
+            if margem_venda < 8.0: pill_cls = "pill-red"
+            elif 8.0 <= margem_venda < 15.0: pill_cls = "pill-yellow"
+            else: pill_cls = "pill-green"
+
+            txt_pill = f"{margem_venda:.1f}%"
+            txt_luc = f"+ R$ {lucro_final:.2f}" if luc > 0 else f"- R$ {abs(lucro_final):.2f}"
+            sku_show = item.get('SKU', '')
             
             st.markdown(f"""
-            <div class="product-card">
+            <div class="feed-card">
                 <div class="card-header">
-                    <div><div class="sku-text">{item['MLB']} {item['SKU']}</div><div class="title-text">{item['Produto']}</div></div>
-                    <div class="pill {cls}">{mrg_v:.1f}%</div>
+                    <div><div class="sku-text">{item['MLB']} {sku_show}</div><div class="title-text">{item['Produto']}</div></div>
+                    <div class="{pill_cls} pill">{txt_pill}</div>
                 </div>
                 <div class="card-body">
-                    <div style="display:flex; justify-content:space-between;">
-                        <div class="price-display">Venda<br><b>R$ {pf:.2f}</b></div>
-                        <div class="price-display" style="text-align:right;">Lucro<br><span style="color:{'#34C759' if lucro>0 else '#FF3B30'}">R$ {lucro:.2f}</span></div>
-                    </div>
+                    <div style="font-size: 11px; color:#888; font-weight:600;">PREÇO DE VENDA</div>
+                    <div class="price-hero">R$ {pf:.2f}</div>
+                    <div style="font-size: 13px; color:#555; margin-bottom:5px;">Lucro Líquido: <b>{txt_luc}</b></div>
                 </div>
                 <div class="card-footer">
-                    <div class="margin-box">Margem Venda: <b>{mrg_v:.1f}%</b></div>
-                    <div class="margin-box" style="border-left: 1px solid #eee;">Margem ERP: <b>{mrg_erp:.1f}%</b></div>
+                    <div class="margin-box"><div>Margem Venda</div><div class="margin-val">{margem_venda:.1f}%</div></div>
+                    <div class="margin-box" style="border-left: 1px solid #eee;"><div>Margem ERP</div><div class="margin-val">{margem_erp:.1f}%</div></div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
             
             with st.expander("⚙️ Editar e Detalhes"):
-                def up(k, f, i=item['id']):
-                    atualizar_campo_db(i, f, st.session_state[k])
-                    for idx, p in enumerate(st.session_state.lista_produtos):
-                        if p['id'] == i: st.session_state.lista_produtos[idx][f] = st.session_state[k]
+                real_idx = next((i for i, x in enumerate(st.session_state.lista_produtos) if x['id'] == item['id']), -1)
+                if real_idx != -1:
+                    def up_f(k, f, i=real_idx): 
+                        st.session_state.lista_produtos[i][f] = st.session_state[k]
+                        salvar_dados_seguro()
 
-                st.info(f"💡 Sugestão (Meta ERP): **R$ {item.get('PrecoSugerido', 0):.2f}**")
+                    c1, c2, c3 = st.columns(3)
+                    c1.number_input("Preço", value=float(item['PrecoBase']), key=f"p{item['id']}", on_change=up_f, args=(f"p{item['id']}", 'PrecoBase'))
+                    c2.number_input("Desc %", value=float(item['DescontoPct']), key=f"d{item['id']}", on_change=up_f, args=(f"d{item['id']}", 'DescontoPct'))
+                    c3.number_input("Bônus", value=float(item['Bonus']), key=f"b{item['id']}", on_change=up_f, args=(f"b{item['id']}", 'Bonus'))
+                    
+                    st.divider()
+                    st.markdown("##### 🧮 Memória de Cálculo")
+                    st.markdown(f"""
+                    <div class="audit-box">
+                        <div class="audit-line"><span>(+) Preço Tabela</span> <span>R$ {item['PrecoBase']:.2f}</span></div>
+                        <div class="audit-line" style="color:red;"><span>(-) Desconto ({item['DescontoPct']}%)</span> <span>R$ {item['PrecoBase'] - pf:.2f}</span></div>
+                        <div class="audit-line audit-bold"><span>(=) VENDA FINAL</span> <span>R$ {pf:.2f}</span></div>
+                        <br>
+                        <div class="audit-line"><span>(-) Impostos ({imposto_padrao}%)</span> <span>R$ {imposto_val:.2f}</span></div>
+                        <div class="audit-line"><span>(-) Comissão ({item['TaxaML']}%)</span> <span>R$ {comissao_val:.2f}</span></div>
+                        <div class="audit-line"><span>(-) Frete ({nome_frete_real})</span> <span>R$ {valor_frete_real:.2f}</span></div>
+                        <div class="audit-line" style="font-size:10px; color:#888;">&nbsp;&nbsp;&nbsp;↳ {motivo_frete}</div>
+                        <div class="audit-line"><span>(-) Custo CMV</span> <span>R$ {item['CMV']:.2f}</span></div>
+                        <div class="audit-line"><span>(-) Extras</span> <span>R$ {item['Extra']:.2f}</span></div>
+                        <br>
+                        <div class="audit-line" style="color:green;"><span>(+) Bônus / Rebate</span> <span>R$ {item['Bonus']:.2f}</span></div>
+                        <hr style="border-top: 1px dashed #ccc;">
+                        <div class="audit-line audit-bold"><span>(=) LUCRO LÍQUIDO</span> <span>R$ {lucro_final:.2f}</span></div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    st.write("")
+                    if st.button("🗑️ Excluir", key=f"del{item['id']}"):
+                        del st.session_state.lista_produtos[real_idx]
+                        salvar_dados_seguro()
+                        reiniciar_app()
+        
+        st.markdown("---")
+        col_d, col_c = st.columns([2, 1])
+        csv_data = []
+        for it in st.session_state.lista_produtos:
+            pf = it['PrecoBase'] * (1 - it['DescontoPct']/100)
+            _, fr, _ = identificar_faixa_frete(pf)
+            if _ == "manual": fr = it['FreteManual']
+            luc = pf - (it['CMV'] + it['Extra'] + fr + (pf*(imposto_padrao+it['TaxaML'])/100)) + it['Bonus']
+            mrg = (luc/pf*100) if pf else 0
+            mrg_erp_csv = (luc/it.get('PrecoERP', 1)*100) if it.get('PrecoERP', 0) > 0 else 0
+            csv_data.append({
+                "MLB": it['MLB'], "SKU": it.get('SKU', ''), "Produto": it['Produto'],
+                "Preco Venda": pf, "Lucro": luc, "Margem Venda %": mrg, "Margem ERP %": mrg_erp_csv
+            })
+        df_export = pd.DataFrame(csv_data)
+        csv_file = df_export.to_csv(index=False).encode('utf-8')
+        col_d.download_button("📥 Baixar Relatório", csv_file, "precificacao.csv", "text/csv")
+        
+        def limpar_tudo_action(): 
+            st.session_state.lista_produtos = []
+            salvar_dados_seguro()
+            reiniciar_app()
+            
+        col_c.button("🗑️ LIMPAR TUDO", on_click=limpar_tudo_action, type="secondary")
+    else:
+        if not selecao_busca: st.info("Lista vazia.")
 
-                e1, e2, e3 = st.columns(3)
-                # AQUI EDITAMOS O PREÇO USADO
-                e1.number_input("Preço Usado (Tabela)", value=float(item['PrecoUsado']), key=f"p{item['id']}", on_change=up, args=(f"p{item['id']}", 'PrecoUsado'))
-                e2.number_input("Desc %", value=float(item['DescontoPct']), key=f"d{item['id']}", on_change=up, args=(f"d{item['id']}", 'DescontoPct'))
-                e3.number_input("Bônus", value=float(item['Bonus']), key=f"b{item['id']}", on_change=up, args=(f"b{item['id']}", 'Bonus'))
-                
-                st.divider()
-                st.markdown("##### 🧮 Memória de Cálculo")
-                st.markdown(f"""
-                <div class="audit-box">
-                    <div class="audit-line"><span>(+) Preço Tabela</span> <span>R$ {item['PrecoUsado']:.2f}</span></div>
-                    <div class="audit-line" style="color:red;"><span>(-) Desconto ({item['DescontoPct']}%)</span> <span>R$ {item['PrecoUsado'] - pf:.2f}</span></div>
-                    <div class="audit-line audit-bold"><span>(=) VENDA LÍQUIDA</span> <span>R$ {pf:.2f}</span></div>
-                    <br>
-                    <div class="audit-line"><span>(-) Impostos ({st.session_state.imposto_padrao}%)</span> <span>R$ {imp:.2f}</span></div>
-                    <div class="audit-line"><span>(-) Comissão ({item['TaxaML']}%)</span> <span>R$ {com:.2f}</span></div>
-                    <div class="audit-line"><span>(-) Frete ({fr_lbl})</span> <span>R$ {fr_val:.2f}</span></div>
-                    <div class="audit-line"><span>(-) Custo CMV</span> <span>R$ {item['CMV']:.2f}</span></div>
-                    <div class="audit-line"><span>(-) Extras</span> <span>R$ {item['Extra']:.2f}</span></div>
-                    <br>
-                    <div class="audit-line" style="color:green;"><span>(+) Bônus / Rebate</span> <span>R$ {item['Bonus']:.2f}</span></div>
-                    <hr style="border-top: 1px dashed #ccc;">
-                    <div class="audit-line audit-bold"><span>(=) LUCRO LÍQUIDO</span> <span>R$ {lucro:.2f}</span></div>
-                </div>
-                """, unsafe_allow_html=True)
-                
-                st.write("")
-                if st.button("🗑️ Excluir", key=f"del{item['id']}"):
-                    deletar_produto(item['id'])
-                    st.session_state.lista_produtos = carregar_produtos(st.session_state.owner_id)
-                    reiniciar_app()
+# --- ABA 2 ---
+with tab_bi:
+    if not has_plotly: st.error("Instale 'plotly'")
+    elif len(st.session_state.lista_produtos) > 0:
+        visao_margem = st.radio("Base de Análise:", ["Margem sobre Venda", "Margem sobre ERP"], horizontal=True)
+        rows = []
+        for item in st.session_state.lista_produtos:
+            if 'PrecoERP' not in item: item['PrecoERP'] = 0.0
+            pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
+            _, fr, _ = identificar_faixa_frete(pf)
+            if _ == "manual": fr = item['FreteManual']
+            luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
+            mrg_venda = (luc/pf*100) if pf else 0
+            erp_val = float(item.get('PrecoERP', 0.0))
+            mrg_erp = (luc/erp_val*100) if erp_val > 0 else 0
+            mrg_analise = mrg_venda if visao_margem == "Margem sobre Venda" else mrg_erp
+            status = 'Saudável'
+            if mrg_analise < 8: status = 'Crítico'
+            elif mrg_analise < 15: status = 'Atenção'
+            rows.append({'Produto': item['Produto'], 'Margem': mrg_analise, 'Lucro': luc, 'Status': status, 'Venda': pf, 
+                         'Custo': item['CMV'], 'Imposto': pf*(imposto_padrao/100), 'Comissão': pf*(item['TaxaML']/100), 'Frete': fr})
+        
+        df_dash = pd.DataFrame(rows)
+        k1, k2, k3 = st.columns(3)
+        k1.metric("Produtos", len(df_dash))
+        k2.metric(f"Média {visao_margem}", f"{df_dash['Margem'].mean():.1f}%")
+        k3.metric("Lucro Total", f"R$ {df_dash['Lucro'].sum():.2f}")
+        st.divider()
+        
+        counts = df_dash['Status'].value_counts().reset_index()
+        counts.columns = ['Status', 'Qtd']
+        fig = px.bar(counts, x='Status', y='Qtd', color='Status', 
+                     color_discrete_map={'Crítico': '#EF4444', 'Atenção': '#F59E0B', 'Saudável': '#10B981'})
+        st.plotly_chart(fig, use_container_width=True)
+        
+        st.subheader("Dispersão")
+        fig2 = px.scatter(df_dash, x='Venda', y='Margem', color='Status', hover_name='Produto',
+                          color_discrete_map={'Crítico': '#EF4444', 'Atenção': '#F59E0B', 'Saudável': '#10B981'})
+        st.plotly_chart(fig2, use_container_width=True)
 
-# --- ABA 2: DASHBOARDS ---
-if len(tabs) > 1:
-    with tabs[1]:
-        if has_plotly and st.session_state.lista_produtos:
-            visao = st.radio("Base de Análise:", ["Margem Venda", "Margem ERP"], horizontal=True)
-            rows = []
-            for item in st.session_state.lista_produtos:
-                pf = item['PrecoUsado'] * (1 - item['DescontoPct']/100)
-                fr, _ = identificar_frete(pf)
-                if _ == "Manual": fr = item['FreteManual']
-                luc = pf - (item['CMV'] + item['Extra'] + fr + (pf*(st.session_state.imposto_padrao+item['TaxaML'])/100)) + item['Bonus']
-                
-                mv = (luc/pf*100) if pf else 0
-                me = (luc/item['PrecoERP']*100) if item['PrecoERP'] else 0
-                m_analise = mv if visao == "Margem Venda" else me
-                
-                stt = 'Saudável'
-                if m_analise < 8: stt = 'Crítico'
-                elif m_analise < 15: stt = 'Atenção'
-                
-                rows.append({'Produto': item['Produto'], 'Margem': m_analise, 'Lucro': luc, 'Status': stt, 'Venda': pf})
-            
-            df = pd.DataFrame(rows)
-            k1, k2 = st.columns(2)
-            k1.metric("Produtos", len(df))
-            k2.metric("Lucro Estimado", f"R$ {df['Lucro'].sum():.2f}")
-            st.divider()
-            
-            # G1: Semáforo
-            fig = px.bar(df['Status'].value_counts().reset_index(), x='Status', y='count', color='Status', 
-                         color_discrete_map={'Crítico': '#EF4444', 'Atenção': '#F59E0B', 'Saudável': '#10B981'})
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # G2: Scatter
-            fig2 = px.scatter(df, x='Venda', y='Margem', color='Status', hover_name='Produto', 
-                             color_discrete_map={'Crítico': '#EF4444', 'Atenção': '#F59E0B', 'Saudável': '#10B981'})
-            st.plotly_chart(fig2, use_container_width=True)
-            
-            # G3: Decomposição (Stacked)
-            st.subheader("Anatomia do Preço (Top 10)")
-            # (Simplificado para caber, usando dados já calculados seria ideal, aqui reusamos a estrutura)
-            # Para manter simples, vamos focar nos dois gráficos principais aprovados.
-        else:
-            st.info("Sem dados.")
+        st.subheader("Anatomia do Preço (Top 10)")
+        df_top = df_dash.sort_values(by='Venda', ascending=False).head(10)
+        fig3 = px.bar(df_top, y='Produto', x=['Custo', 'Frete', 'Comissão', 'Imposto', 'Lucro'], orientation='h')
+        st.plotly_chart(fig3, use_container_width=True)
+    else: st.info("Adicione produtos para ver os gráficos.")
