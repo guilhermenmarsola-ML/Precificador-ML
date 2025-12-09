@@ -8,8 +8,8 @@ import os
 from datetime import datetime
 
 # --- 1. CONFIGURAÇÃO (APP SHELL) ---
-st.set_page_config(page_title="Precificador PRO - Commercial", layout="centered", page_icon="💎")
-DB_NAME = 'precificador_saas_v76.db'
+st.set_page_config(page_title="Precificador PRO - V77 Stable", layout="wide", page_icon="💎")
+DB_NAME = 'precificador_v77.db' # Banco Novo para garantir estrutura limpa
 
 # Verifica Plotly
 try:
@@ -20,7 +20,6 @@ except ImportError:
 
 # --- 2. SISTEMA SAAS (BANCO DE DADOS E LOGIN) ---
 
-# Definição dos Planos
 PLAN_LIMITS = {
     "Silver": {"limit": 50, "dash": False, "desc": "Até 50 produtos"},
     "Gold": {"limit": 999999, "dash": False, "desc": "Produtos Ilimitados"},
@@ -30,7 +29,6 @@ PLAN_LIMITS = {
 def init_db():
     conn = sqlite3.connect(DB_NAME, check_same_thread=False)
     c = conn.cursor()
-    # Tabela Usuários
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -38,7 +36,6 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     ''')
-    # Tabela Produtos (Estrutura idêntica à V64, mas com owner_id)
     c.execute('''
         CREATE TABLE IF NOT EXISTS products (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -81,7 +78,7 @@ def login_user(user, pw):
     finally: conn.close()
     return None
 
-# CRUD Produtos (Mapeado da V64)
+# CRUD Produtos
 def load_products(user_id):
     conn = get_db()
     try:
@@ -92,18 +89,15 @@ def load_products(user_id):
 
 def save_product(user_id, item):
     conn = get_db(); c = conn.cursor()
-    # Verifica limite do plano antes de inserir (se for novo)
-    # Aqui simplificamos: o frontend bloqueia, o backend salva.
     c.execute('''INSERT INTO products (owner_id, MLB, SKU, Produto, CMV, FreteManual, Extra, TaxaML, PrecoERP, MargemERP, PrecoBase, DescontoPct, Bonus)
                  VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)''', 
-              (user_id, item['MLB'], item['SKU'], item['Produto'], item['CMV'], item['FreteManual'], item['Extra'], 
-               item['TaxaML'], item['PrecoERP'], item['MargemERP'], item['PrecoBase'], item['DescontoPct'], item['Bonus']))
+              (user_id, item.get('MLB',''), item.get('SKU',''), item.get('Produto',''), item.get('CMV',0), item.get('FreteManual',0), item.get('Extra',0), 
+               item.get('TaxaML',0), item.get('PrecoERP',0), item.get('MargemERP',0), item.get('PrecoBase',0), item.get('DescontoPct',0), item.get('Bonus',0)))
     conn.commit(); conn.close()
 
 def update_product_field(prod_id, field, value):
     conn = get_db(); c = conn.cursor()
-    # Proteção contra SQL Injection via whitelist de colunas
-    valid_fields = ['PrecoBase', 'DescontoPct', 'Bonus', 'CMV', 'FreteManual', 'TaxaML', 'PrecoERP']
+    valid_fields = ['PrecoBase', 'DescontoPct', 'Bonus', 'CMV', 'FreteManual', 'TaxaML', 'PrecoERP', 'MargemERP']
     if field in valid_fields:
         c.execute(f"UPDATE products SET {field} = ? WHERE id = ?", (value, prod_id))
         conn.commit()
@@ -114,7 +108,7 @@ def delete_product(prod_id):
     c.execute("DELETE FROM products WHERE id = ?", (prod_id,))
     conn.commit(); conn.close()
 
-# --- 3. ESTADO E VARIÁVEIS DA V64 ---
+# --- 3. ESTADO E FUNÇÕES ---
 if 'logged_in' not in st.session_state: st.session_state.logged_in = False
 if 'user' not in st.session_state: st.session_state.user = {}
 if 'lista_produtos' not in st.session_state: st.session_state.lista_produtos = []
@@ -127,28 +121,44 @@ def reiniciar_app():
 def init_var(key, value):
     if key not in st.session_state: st.session_state[key] = value
 
-# Variáveis originais da V64
 init_var('n_mlb', ''); init_var('n_sku', ''); init_var('n_nome', '')
 init_var('n_cmv', 32.57); init_var('n_extra', 0.00); init_var('n_frete', 18.86)
 init_var('n_taxa', 16.5); init_var('n_erp', 85.44); init_var('n_merp', 20.0)
 init_var('imposto_padrao', 27.0) 
 init_var('taxa_12_29', 6.25); init_var('taxa_29_50', 6.50); init_var('taxa_50_79', 6.75); init_var('taxa_minima', 3.25)
 
-# --- 4. TELA DE LOGIN (PORTAL DO CLIENTE) ---
+# --- FUNÇÃO DE AUTO-REPARO (CORREÇÃO DO KEYERROR) ---
+def sanear_dados():
+    """Garante que todo produto tenha todas as chaves necessárias"""
+    if st.session_state.lista_produtos:
+        fixed_list = []
+        for p in st.session_state.lista_produtos:
+            # Preenche defaults se faltar
+            if 'PrecoBase' not in p: p['PrecoBase'] = 0.0
+            if 'DescontoPct' not in p: p['DescontoPct'] = 0.0
+            if 'Bonus' not in p: p['Bonus'] = 0.0
+            if 'CMV' not in p: p['CMV'] = 0.0
+            if 'PrecoERP' not in p: p['PrecoERP'] = 0.0
+            if 'MargemERP' not in p: p['MargemERP'] = 0.0
+            if 'TaxaML' not in p: p['TaxaML'] = 16.5
+            if 'FreteManual' not in p: p['FreteManual'] = 0.0
+            if 'Extra' not in p: p['Extra'] = 0.0
+            if 'Produto' not in p: p['Produto'] = 'Sem Nome'
+            if 'MLB' not in p: p['MLB'] = ''
+            if 'SKU' not in p: p['SKU'] = ''
+            fixed_list.append(p)
+        st.session_state.lista_produtos = fixed_list
+
+# Roda saneamento ao iniciar
+sanear_dados()
+
+# --- 4. TELA DE LOGIN ---
 if not st.session_state.logged_in:
-    st.markdown("""
-    <style>
-        .login-box { background: white; padding: 40px; border-radius: 20px; box-shadow: 0 10px 30px rgba(0,0,0,0.05); border: 1px solid #eee; }
-        .stApp { background-color: #F5F5F7; }
-    </style>
-    """, unsafe_allow_html=True)
-    
+    st.markdown("""<style>.login-box {background:white;padding:40px;border-radius:20px;box-shadow:0 10px 30px rgba(0,0,0,0.05);border:1px solid #eee;}.stApp {background-color:#F5F5F7;}</style>""", unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
         st.markdown("<h1 style='text-align:center; color:#1D1D1F;'>Precificador <span style='color:#0071E3'>PRO</span></h1>", unsafe_allow_html=True)
-        
         tab_login, tab_sign = st.tabs(["Acessar", "Criar Conta"])
-        
         with tab_login:
             with st.container(border=True):
                 u = st.text_input("Email", key="l_u")
@@ -159,71 +169,50 @@ if not st.session_state.logged_in:
                         st.session_state.user = user
                         st.session_state.logged_in = True
                         st.session_state.lista_produtos = load_products(user['id'])
+                        sanear_dados() # Garante integridade pós-login
                         reiniciar_app()
-                    else:
-                        st.error("Dados incorretos.")
-
+                    else: st.error("Dados incorretos.")
         with tab_sign:
             with st.container(border=True):
                 nu = st.text_input("Seu Email", key="r_u")
                 nn = st.text_input("Seu Nome", key="r_n")
                 np = st.text_input("Crie uma Senha", type="password", key="r_p")
                 npl = st.selectbox("Escolha o Plano", ["Silver", "Gold", "Platinum"])
-                
                 if st.button("Começar Agora", type="primary", use_container_width=True):
-                    if create_user(nu, np, nn, npl.split()[0]) > 0:
-                        st.success("Conta criada! Faça login.")
-                    else:
-                        st.error("Usuário já existe.")
+                    if create_user(nu, np, nn, npl.split()[0]) > 0: st.success("Criado! Faça login.")
+                    else: st.error("Erro ao criar.")
     st.stop()
 
 # ==============================================================================
-# APLICAÇÃO V64 ORIGINAL (COM AJUSTES DE SAAS)
+# APLICAÇÃO LOGADA
 # ==============================================================================
 
-# --- CSS (VISUAL APROVADO V64) ---
+# --- CSS (VISUAL APROVADO) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;800&display=swap');
     .stApp { background-color: #FAFAFA; font-family: 'Inter', sans-serif; }
-    
-    /* Input Card */
     .input-card { background: white; border-radius: 20px; padding: 24px; box-shadow: 0 10px 30px -10px rgba(0,0,0,0.05); border: 1px solid #EFEFEF; margin-bottom: 20px; }
-    
-    /* Feed Card */
     .feed-card { background: white; border-radius: 16px; border: 1px solid #DBDBDB; box-shadow: 0 2px 5px rgba(0,0,0,0.02); margin-bottom: 15px; overflow: hidden; }
     .card-header { padding: 15px 20px; border-bottom: 1px solid #F0F0F0; display: flex; justify-content: space-between; align-items: center; }
     .card-body { padding: 20px; text-align: center; }
-
-    /* Tipografia */
     .sku-text { font-size: 11px; color: #8E8E8E; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; }
     .title-text { font-size: 16px; font-weight: 600; color: #262626; margin-top: 2px; }
     .price-hero { font-size: 32px; font-weight: 800; letter-spacing: -1px; color: #262626; margin: 5px 0; }
-    
-    /* Pills */
     .pill { padding: 6px 12px; border-radius: 20px; font-size: 13px; font-weight: 700; display: inline-block; }
     .pill-green { background-color: #E6FFFA; color: #047857; border: 1px solid #D1FAE5; }
     .pill-yellow { background-color: #FFFBEB; color: #B45309; border: 1px solid #FCD34D; }
     .pill-red { background-color: #FEF2F2; color: #DC2626; border: 1px solid #FEE2E2; }
-
-    /* Audit Box (DRE) */
     .audit-box { background-color: #F8F9FA; border: 1px solid #E9ECEF; border-radius: 8px; padding: 15px; font-family: 'Courier New', monospace; font-size: 12px; color: #333; margin-top: 10px; }
     .audit-line { display: flex; justify-content: space-between; margin-bottom: 4px; }
     .audit-bold { font-weight: bold; color: #000; }
-
-    /* Inputs e Botões */
     div[data-testid="stNumberInput"] input, div[data-testid="stTextInput"] input { background-color: #FAFAFA !important; border: 1px solid #E5E5E5 !important; color: #333 !important; border-radius: 8px !important; }
     div.stButton > button[kind="primary"] { background: linear-gradient(135deg, #2563EB, #1D4ED8); color: white; border-radius: 10px; height: 50px; border: none; font-weight: 600; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2); }
-    
-    /* Search Bar */
-    div[data-testid="stSelectbox"] > div > div { background-color: white !important; border: 1px solid #2563EB !important; border-radius: 12px !important; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.1); }
-
-    /* Plan Badge */
     .plan-badge { background: #1D1D1F; color: white; padding: 4px 10px; border-radius: 4px; font-size: 10px; font-weight: bold; text-transform: uppercase; }
 </style>
 """, unsafe_allow_html=True)
 
-# --- FUNÇÕES DE CÁLCULO V64 ---
+# --- FUNÇÕES DE CÁLCULO ---
 def limpar_valor_dinheiro(valor):
     try:
         if pd.isna(valor) or str(valor).strip() == "" or str(valor).strip() == "-": return 0.0
@@ -260,11 +249,10 @@ def calcular_preco_sugerido_reverso(custo_base, lucro_alvo_reais, taxa_ml_pct, i
     return preco_est_1, "Frete Manual"
 
 def adicionar_produto_action():
-    # VERIFICA PLANO
     plano_atual = st.session_state.user['plan']
-    limite = PLAN_LIMITS[plano_atual]['limit']
-    if len(st.session_state.lista_produtos) >= limite:
-        st.toast(f"Limite do plano {plano_atual} atingido! ({limite} itens)", icon="🔒")
+    limit = PLAN_LIMITS[plano_atual]['limit']
+    if len(st.session_state.lista_produtos) >= limit:
+        st.toast(f"Limite do plano atingido!", icon="🔒")
         return
 
     if not st.session_state.n_nome:
@@ -310,28 +298,35 @@ with st.sidebar:
         st.session_state.taxa_minima = st.number_input("Min", value=st.session_state.taxa_minima)
     st.divider()
     
-    # IMPORTAÇÃO (Simples e Direta da V64)
+    # IMPORTAÇÃO (Simplificada)
     st.markdown("### 📂 Importar")
     uploaded_file = st.file_uploader("Excel/CSV", type=['xlsx', 'csv'])
     if uploaded_file and st.button("Importar"):
         try:
             xl = pd.ExcelFile(uploaded_file)
-            df = xl.parse(0) # Pega primeira aba
-            # Lógica de mapeamento simplificada para não dar erro
+            df = xl.parse(0)
             cols = [str(c).lower() for c in df.columns]
             for _, row in df.iterrows():
                 try:
-                    # Tenta achar colunas
-                    p = row.iloc[2] # Assume produto na col 3 se nao achar nome
-                    c = limpar_valor_dinheiro(row.iloc[4]) # Assume CMV
-                    # (Em um app real, o mapeamento manual da V64 seria recolocado aqui)
-                    # Para brevidade, usando inserção direta de exemplo
+                    # Busca simplificada
+                    def find_col(k): return next((c for c in df.columns if k.lower() in str(c).lower()), None)
+                    p = row[find_col("Produto")]
+                    c = limpar_valor_dinheiro(row[find_col("CMV")])
+                    pb = limpar_valor_dinheiro(row[find_col("Preço")])
+                    
+                    item = {
+                        "MLB": str(row.get(find_col("MLB"), "")), "SKU": "", "Produto": p,
+                        "CMV": c, "FreteManual": 18.86, "TaxaML": 16.5, "Extra": 0.0,
+                        "PrecoERP": pb, "MargemERP": 20.0, "PrecoBase": pb, "DescontoPct": 0.0, "Bonus": 0.0
+                    }
+                    save_product(st.session_state.user['id'], item)
                 except: pass
-            st.toast("Importação simulada (use cadastro manual para garantir)", icon="ℹ️")
+            st.session_state.lista_produtos = load_products(st.session_state.user['id'])
+            st.success("Importado!")
         except: st.error("Erro no arquivo")
 
 # ==============================================================================
-# INTERFACE PRINCIPAL (V64 RESTAURADA)
+# INTERFACE PRINCIPAL
 # ==============================================================================
 
 st.markdown('<div style="text-align:center; padding-bottom:10px;">', unsafe_allow_html=True)
@@ -411,7 +406,7 @@ with tab_op:
         st.caption(f"Visualizando {len(lista_final)} produtos")
         for item in lista_final:
             
-            # CÁLCULO V64 (APROVADO)
+            # CÁLCULO
             pf = item['PrecoBase'] * (1 - item['DescontoPct']/100)
             
             nome_frete_real, valor_frete_real, motivo_frete = identificar_faixa_frete(pf)
@@ -450,7 +445,7 @@ with tab_op:
                 # Callback de Edição (Salva no DB)
                 def up(k, f, i=item['id']): 
                     update_product_field(i, f, st.session_state[k])
-                    # Atualiza estado local
+                    # Atualiza Local
                     for idx, p in enumerate(st.session_state.lista_produtos):
                         if p['id'] == i: st.session_state.lista_produtos[idx][f] = st.session_state[k]
 
@@ -472,6 +467,7 @@ with tab_op:
                     <div class="audit-line"><span>(-) Impostos ({st.session_state.imposto_padrao}%)</span> <span>R$ {imposto_val:.2f}</span></div>
                     <div class="audit-line"><span>(-) Comissão ({item['TaxaML']}%)</span> <span>R$ {comissao_val:.2f}</span></div>
                     <div class="audit-line"><span>(-) Frete ({nome_frete_real})</span> <span>R$ {valor_frete_real:.2f}</span></div>
+                    <div class="audit-line" style="font-size:10px; color:#888;">&nbsp;&nbsp;&nbsp;↳ {motivo_frete}</div>
                     <div class="audit-line"><span>(-) Custo CMV</span> <span>R$ {item['CMV']:.2f}</span></div>
                     <div class="audit-line"><span>(-) Extras</span> <span>R$ {item['Extra']:.2f}</span></div>
                     <br>
@@ -486,25 +482,65 @@ with tab_op:
                     delete_product(item['id'])
                     st.session_state.lista_produtos = load_products(st.session_state.user['id'])
                     reiniciar_app()
+        
+        st.markdown("---")
+        col_d, col_c = st.columns([2, 1])
+        
+        # CSV Export
+        csv_data = []
+        for it in st.session_state.lista_produtos:
+            pf = it['PrecoBase'] * (1 - it['DescontoPct']/100)
+            _, fr, _ = identificar_faixa_frete(pf)
+            if _ == "manual": fr = it['FreteManual']
+            luc = pf - (it['CMV'] + it['Extra'] + fr + (pf*(st.session_state.imposto_padrao+it['TaxaML'])/100)) + it['Bonus']
+            mrg = (luc/pf*100) if pf else 0
+            csv_data.append({
+                "MLB": it['MLB'], "SKU": it.get('SKU', ''), "Produto": it['Produto'],
+                "Preco Venda": pf, "Lucro": luc, "Margem %": mrg
+            })
+        
+        df_export = pd.DataFrame(csv_data)
+        csv_file = df_export.to_csv(index=False).encode('utf-8')
+        col_d.download_button("📥 Baixar Relatório", csv_file, "precificacao.csv", "text/csv")
+        
+        def limpar_tudo_action(): 
+            for i in st.session_state.lista_produtos: delete_product(i['id'])
+            st.session_state.lista_produtos = []
+            reiniciar_app()
+            
+        col_c.button("🗑️ LIMPAR TUDO", on_click=limpar_tudo_action, type="secondary")
     else:
         if not selecao_busca: st.info("Lista vazia.")
 
 # --- ABA 2: DASHBOARDS (Só Platinum) ---
-if tab_bi and has_plotly and st.session_state.lista_produtos:
-    with tab_bi:
-        # Mesma lógica da V64
-        df = pd.DataFrame(st.session_state.lista_produtos)
-        df['pf'] = df['PrecoBase'] * (1 - df['DescontoPct']/100)
-        df['lucro'] = df.apply(lambda x: x['pf'] - (x['CMV'] + x['Extra'] + (x['pf']*(st.session_state.imposto_padrao+x['TaxaML'])/100)), axis=1)
-        df['margem'] = df['lucro'] / df['pf'] * 100
-        
-        k1, k2 = st.columns(2)
-        k1.metric("Produtos", len(df))
-        k2.metric("Lucro Estimado Total", f"R$ {df['lucro'].sum():.2f}")
-        st.divider()
-        fig = px.bar(df, x='Produto', y='lucro', color='margem', title="Lucro por Produto")
-        st.plotly_chart(fig, use_container_width=True)
-        
-        st.subheader("Dispersão")
-        fig2 = px.scatter(df, x='pf', y='margem', color='margem', hover_name='Produto', title="Preço x Margem")
-        st.plotly_chart(fig2, use_container_width=True)
+if len(tabs) > 1:
+    with tabs[1]:
+        if has_plotly and st.session_state.lista_produtos:
+            df = pd.DataFrame(st.session_state.lista_produtos)
+            
+            # Recalculo para dataframe
+            def calc_row(x):
+                pf = x['PrecoBase'] * (1 - x['DescontoPct']/100)
+                fr, _, _ = identificar_faixa_frete(pf)
+                if _ == "Manual": fr = x['FreteManual']
+                imp = pf * (st.session_state.imposto_padrao/100)
+                com = pf * (x['TaxaML']/100)
+                luc = pf - (x['CMV'] + x['Extra'] + fr + imp + com) + x['Bonus']
+                mrg = (luc/pf*100) if pf else 0
+                return pd.Series([luc, mrg])
+            
+            df[['lucro_real', 'margem_real']] = df.apply(calc_row, axis=1)
+            
+            k1, k2 = st.columns(2)
+            k1.metric("Total Produtos", len(df))
+            k2.metric("Lucro Estimado", f"R$ {df['lucro_real'].sum():.2f}")
+            
+            st.divider()
+            fig = px.bar(df, x='Produto', y='lucro_real', color='margem_real', title="Lucro por Produto", color_continuous_scale='RdYlGn')
+            st.plotly_chart(fig, use_container_width=True)
+            
+            fig2 = px.scatter(df, x='PrecoBase', y='margem_real', color='margem_real', hover_name='Produto', title="Preço x Margem", color_continuous_scale='RdYlGn')
+            st.plotly_chart(fig2, use_container_width=True)
+            
+        else:
+            st.info("Sem dados.")
